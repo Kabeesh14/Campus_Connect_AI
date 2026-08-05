@@ -2,7 +2,16 @@
  * Production API Client Utility for Campus Connect AI
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const getApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    const trimmed = envUrl.trim();
+    return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+  }
+  return '/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export function getAuthToken(): string | null {
   const token = localStorage.getItem('token');
@@ -50,21 +59,35 @@ export async function apiRequest<T = any>(
     headers['Content-Type'] = 'application/json';
   }
 
-  // Only attach Bearer header if token exists and is valid string (no 'Bearer undefined')
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const url = `${API_BASE_URL}${endpoint}`;
+
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(url, {
       ...options,
       headers,
     });
 
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    let data: any;
+
+    if (contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error(
+          `API Server returned non-JSON response (${response.status}) at ${url}. Check server health at /api/health`
+        );
+      }
+    }
 
     if (response.status === 401) {
-      // Clear localStorage and redirect to login if session expired on protected route
       setAuthToken(null);
       if (window.location.pathname.startsWith('/dashboard') || window.location.pathname.startsWith('/profile')) {
         window.location.href = '/login';
@@ -78,7 +101,7 @@ export async function apiRequest<T = any>(
     return data;
   } catch (error: unknown) {
     const errObj = error instanceof Error ? error : new Error(String(error));
-    console.error(`API Error [${endpoint}]:`, errObj.message);
+    console.error(`API Error [${endpoint}] target [${url}]:`, errObj.message);
     throw errObj;
   }
 }

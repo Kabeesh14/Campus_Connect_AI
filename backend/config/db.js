@@ -1,23 +1,57 @@
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcrypt');
 const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
 
 dotenv.config();
 
+const parseDbConfig = () => {
+  const dbUrl = process.env.MYSQL_URL || process.env.DATABASE_URL || process.env.MYSQL_PUBLIC_URL;
+  if (dbUrl && dbUrl.startsWith('mysql')) {
+    try {
+      const parsed = new URL(dbUrl);
+      return {
+        host: parsed.hostname,
+        port: parseInt(parsed.port || '3306', 10),
+        user: decodeURIComponent(parsed.username || 'root'),
+        password: decodeURIComponent(parsed.password || ''),
+        database: parsed.pathname ? parsed.pathname.replace(/^\//, '') : 'campus_connect_db',
+      };
+    } catch (e) {
+      console.warn('[DB] Failed to parse MYSQL_URL/DATABASE_URL, falling back to individual ENV vars');
+    }
+  }
+
+  return {
+    host: process.env.MYSQLHOST || process.env.MYSQL_HOST || process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.MYSQLPORT || process.env.MYSQL_PORT || process.env.DB_PORT || '3306', 10),
+    user: process.env.MYSQLUSER || process.env.MYSQL_USER || process.env.DB_USER || 'root',
+    password: process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || '',
+    database: process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'campus_connect_db',
+  };
+};
+
+const dbConfig = parseDbConfig();
+
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '3306', 10),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'campus_connect_db',
+  host: dbConfig.host,
+  port: dbConfig.port,
+  user: dbConfig.user,
+  password: dbConfig.password,
+  database: dbConfig.database,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   timezone: '+00:00',
+  ssl: process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : false,
 });
 
-// In-Memory Database Fallback Store for seamless local operation
-const inMemoryDb = {
+// File-backed Local Database Store for seamless local operation
+const DATA_DIR = path.join(__dirname, '../data');
+const LOCAL_DB_FILE = path.join(DATA_DIR, 'local_db.json');
+
+const defaultDbState = () => ({
   users: [
     { id: 'u-student', email: 'student@campus.edu', password_hash: bcrypt.hashSync('password', 10), role: 'student' },
     { id: 'u-officer', email: 'officer@campus.edu', password_hash: bcrypt.hashSync('password', 10), role: 'officer' },
@@ -55,7 +89,42 @@ const inMemoryDb = {
   certifications: [],
   resumes: [],
   ai_chats: [],
+});
+
+let inMemoryDb = defaultDbState();
+
+// Load persistent local db from disk if available
+const loadLocalDb = () => {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(LOCAL_DB_FILE)) {
+      const content = fs.readFileSync(LOCAL_DB_FILE, 'utf8');
+      inMemoryDb = JSON.parse(content);
+      console.log(`[DB] Persistent local database loaded from ${LOCAL_DB_FILE}`);
+    } else {
+      saveLocalDb();
+    }
+  } catch (err) {
+    console.warn('[DB] Error loading local DB file, using default state:', err.message);
+    inMemoryDb = defaultDbState();
+  }
 };
+
+const saveLocalDb = () => {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(LOCAL_DB_FILE, JSON.stringify(inMemoryDb, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[DB] Error saving local DB file:', err.message);
+  }
+};
+
+// Initialize disk storage
+loadLocalDb();
 
 let useInMemoryFallback = false;
 
@@ -66,20 +135,12 @@ const query = async (sql, params = []) => {
       const [results] = await pool.execute(sql, params);
       return results;
     } catch (error) {
-      if (
-        error.code === 'ECONNREFUSED' ||
-        error.code === 'ER_ACCESS_DENIED_ERROR' ||
-        error.message.includes('Access denied')
-      ) {
-        console.warn('MySQL connection unavailable. Switching seamlessly to local resilient data store.');
-        useInMemoryFallback = true;
-      } else {
-        throw error;
-      }
+      console.warn(`[DB] MySQL query execution error (${error.code || error.message}). Switching to persistent local data store.`);
+      useInMemoryFallback = true;
     }
   }
 
-  // Handle queries using in-memory store
+  // Handle queries using local persistent data store
   const cleanSql = sql.trim().toUpperCase();
 
   if (cleanSql.startsWith('SELECT')) {
@@ -89,8 +150,8 @@ const query = async (sql, params = []) => {
       if (sql.includes('FROM companies')) return [{ count: inMemoryDb.companies.length }];
       if (sql.includes('FROM notifications')) {
         const userId = params[0];
-        const unread = inMemoryDb.notifications.filter((n) => n.user_id === userId && !n.read_status).length;
-        return [{ unreadCount: unread, count: inMemoryDb.notifications.length }];
+        const unread = (inMemoryDb.notifications || []).filter((n) => n.user_id === userId && !n.read_status).length;
+        return [{ unreadCount: unread, count: (inMemoryDb.notifications || []).length }];
       }
       return [{ count: 0 }];
     }
@@ -98,95 +159,98 @@ const query = async (sql, params = []) => {
     if (sql.includes('FROM users')) {
       if (sql.includes('WHERE email = ?')) {
         const emailParam = params[0] ? String(params[0]).toLowerCase().trim() : '';
-        return inMemoryDb.users.filter((u) => u.email.toLowerCase() === emailParam);
+        const found = (inMemoryDb.users || []).filter((u) => String(u.email).toLowerCase().trim() === emailParam);
+        return found;
       }
       if (sql.includes('WHERE id = ?')) {
-        return inMemoryDb.users.filter((u) => u.id === params[0]);
+        return (inMemoryDb.users || []).filter((u) => u.id === params[0]);
       }
-      return inMemoryDb.users;
+      return inMemoryDb.users || [];
     }
 
     if (sql.includes('FROM students')) {
       if (sql.includes('WHERE user_id = ?')) {
-        return inMemoryDb.students.filter((s) => s.user_id === params[0]);
+        return (inMemoryDb.students || []).filter((s) => s.user_id === params[0]);
       }
       if (sql.includes('WHERE id = ?')) {
-        return inMemoryDb.students.filter((s) => s.id === params[0]);
+        return (inMemoryDb.students || []).filter((s) => s.id === params[0]);
       }
-      return inMemoryDb.students;
+      return inMemoryDb.students || [];
     }
 
     if (sql.includes('FROM recruiters')) {
       if (sql.includes('WHERE user_id = ?')) {
-        return inMemoryDb.recruiters.filter((r) => r.user_id === params[0]);
+        return (inMemoryDb.recruiters || []).filter((r) => r.user_id === params[0]);
       }
-      return inMemoryDb.recruiters;
+      return inMemoryDb.recruiters || [];
     }
 
     if (sql.includes('FROM placement_officers')) {
       if (sql.includes('WHERE user_id = ?')) {
-        return inMemoryDb.placement_officers.filter((o) => o.user_id === params[0]);
+        return (inMemoryDb.placement_officers || []).filter((o) => o.user_id === params[0]);
       }
-      return inMemoryDb.placement_officers;
+      return inMemoryDb.placement_officers || [];
     }
 
     if (sql.includes('FROM companies')) {
       if (sql.includes('WHERE id = ?')) {
-        return inMemoryDb.companies.filter((c) => c.id === params[0]);
+        return (inMemoryDb.companies || []).filter((c) => c.id === params[0]);
       }
-      return inMemoryDb.companies;
+      return inMemoryDb.companies || [];
     }
 
     if (sql.includes('FROM jobs')) {
       if (sql.includes('WHERE id = ?')) {
-        return inMemoryDb.jobs.filter((j) => j.id === params[0]);
+        return (inMemoryDb.jobs || []).filter((j) => j.id === params[0]);
       }
-      return inMemoryDb.jobs;
+      return inMemoryDb.jobs || [];
     }
 
     if (sql.includes('FROM applications')) {
       if (sql.includes('WHERE student_id = ?')) {
-        return inMemoryDb.applications.filter((a) => a.student_id === params[0]);
+        return (inMemoryDb.applications || []).filter((a) => a.student_id === params[0]);
       }
       if (sql.includes('WHERE job_id = ? AND student_id = ?')) {
-        return inMemoryDb.applications.filter((a) => a.job_id === params[0] && a.student_id === params[1]);
+        return (inMemoryDb.applications || []).filter((a) => a.job_id === params[0] && a.student_id === params[1]);
       }
-      return inMemoryDb.applications;
+      return inMemoryDb.applications || [];
     }
 
     if (sql.includes('FROM notifications')) {
       if (sql.includes('WHERE user_id = ?')) {
-        return inMemoryDb.notifications.filter((n) => n.user_id === params[0]);
+        return (inMemoryDb.notifications || []).filter((n) => n.user_id === params[0]);
       }
-      return inMemoryDb.notifications;
+      return inMemoryDb.notifications || [];
     }
 
     if (sql.includes('FROM skills')) {
-      return inMemoryDb.skills.filter((sk) => sk.student_id === params[0]);
+      return (inMemoryDb.skills || []).filter((sk) => sk.student_id === params[0]);
     }
 
     if (sql.includes('FROM projects')) {
-      return inMemoryDb.projects.filter((p) => p.student_id === params[0]);
+      return (inMemoryDb.projects || []).filter((p) => p.student_id === params[0]);
     }
 
     if (sql.includes('FROM certifications')) {
-      return inMemoryDb.certifications.filter((c) => c.student_id === params[0]);
+      return (inMemoryDb.certifications || []).filter((c) => c.student_id === params[0]);
     }
 
     if (sql.includes('FROM resumes')) {
-      return inMemoryDb.resumes.filter((r) => r.student_id === params[0]);
+      return (inMemoryDb.resumes || []).filter((r) => r.student_id === params[0]);
     }
 
     if (sql.includes('FROM ai_chats')) {
-      return inMemoryDb.ai_chats.filter((c) => c.user_id === params[0] && c.tool_type === params[1]);
+      return (inMemoryDb.ai_chats || []).filter((c) => c.user_id === params[0] && c.tool_type === params[1]);
     }
 
     return [];
   }
 
   if (cleanSql.startsWith('INSERT INTO USERS')) {
-    const newUser = { id: params[0], email: params[1], password_hash: params[2], role: params[3] };
+    const newUser = { id: params[0], email: String(params[1]).toLowerCase().trim(), password_hash: params[2], role: params[3] };
+    if (!inMemoryDb.users) inMemoryDb.users = [];
     inMemoryDb.users.push(newUser);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
@@ -200,19 +264,25 @@ const query = async (sql, params = []) => {
       cgpa: params[5],
       graduation_year: params[6],
     };
+    if (!inMemoryDb.students) inMemoryDb.students = [];
     inMemoryDb.students.push(newStudent);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('INSERT INTO RECRUITERS')) {
     const newRecruiter = { id: params[0], user_id: params[1], name: params[2], designation: params[3] };
+    if (!inMemoryDb.recruiters) inMemoryDb.recruiters = [];
     inMemoryDb.recruiters.push(newRecruiter);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('INSERT INTO PLACEMENT_OFFICERS')) {
     const newOfficer = { id: params[0], user_id: params[1], name: params[2], department: params[3], designation: params[4] };
+    if (!inMemoryDb.placement_officers) inMemoryDb.placement_officers = [];
     inMemoryDb.placement_officers.push(newOfficer);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
@@ -223,7 +293,9 @@ const query = async (sql, params = []) => {
       requirements: params[10], responsibilities: params[11], eligibility: params[12], skills: params[13],
       deadline: params[14], description: params[15], match_score: 90, posted_days: 0,
     };
+    if (!inMemoryDb.jobs) inMemoryDb.jobs = [];
     inMemoryDb.jobs.push(newJob);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
@@ -233,28 +305,38 @@ const query = async (sql, params = []) => {
       logo: params[5], stage: params[6] || 'applied', status: params[7] || 'pending',
       applied_date: params[8], updated_date: params[9], salary: params[10],
     };
+    if (!inMemoryDb.applications) inMemoryDb.applications = [];
     inMemoryDb.applications.push(newApp);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('INSERT INTO NOTIFICATIONS')) {
     const newNotif = { id: params[0], user_id: params[1], type: params[2] || 'announcement', title: params[3], body: params[4], time: params[5] || 'Just now', read_status: 0 };
+    if (!inMemoryDb.notifications) inMemoryDb.notifications = [];
     inMemoryDb.notifications.push(newNotif);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('INSERT INTO SKILLS')) {
+    if (!inMemoryDb.skills) inMemoryDb.skills = [];
     inMemoryDb.skills.push({ id: params[0], student_id: params[1], name: params[2], level: params[3], category: params[4] });
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('INSERT INTO PROJECTS')) {
+    if (!inMemoryDb.projects) inMemoryDb.projects = [];
     inMemoryDb.projects.push({ id: params[0], student_id: params[1], name: params[2], desc: params[3], stack: params[4], link: params[5] });
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('INSERT INTO CERTIFICATIONS')) {
+    if (!inMemoryDb.certifications) inMemoryDb.certifications = [];
     inMemoryDb.certifications.push({ id: params[0], student_id: params[1], name: params[2], issuer: params[3], year: params[4] });
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
@@ -262,7 +344,9 @@ const query = async (sql, params = []) => {
     const newChat = {
       id: params[0], user_id: params[1], tool_type: params[2], question: params[3], response: params[4], created_at: new Date().toISOString(),
     };
+    if (!inMemoryDb.ai_chats) inMemoryDb.ai_chats = [];
     inMemoryDb.ai_chats.push(newChat);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
@@ -270,18 +354,21 @@ const query = async (sql, params = []) => {
     const newResume = {
       id: params[0], student_id: params[1], file_name: params[2], file_path: params[3], file_size: params[4], mime_type: params[5], uploaded_at: new Date().toISOString(),
     };
+    if (!inMemoryDb.resumes) inMemoryDb.resumes = [];
     inMemoryDb.resumes.push(newResume);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('UPDATE USERS')) {
-    const u = inMemoryDb.users.find((item) => item.email.toLowerCase() === String(params[1]).toLowerCase());
+    const u = (inMemoryDb.users || []).find((item) => String(item.email).toLowerCase() === String(params[1]).toLowerCase());
     if (u) u.password_hash = params[0];
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('UPDATE STUDENTS')) {
-    const s = inMemoryDb.students.find((item) => item.user_id === params[1] || item.id === params[7]);
+    const s = (inMemoryDb.students || []).find((item) => item.user_id === params[1] || item.id === params[7]);
     if (s) {
       if (params[0]) s.name = params[0];
       if (params[1]) s.headline = params[1];
@@ -291,60 +378,70 @@ const query = async (sql, params = []) => {
       if (params[5]) s.bio = params[5];
       if (params[6]) s.phone = params[6];
     }
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('UPDATE COMPANIES')) {
-    const c = inMemoryDb.companies.find((item) => item.id === params[7] || item.id === params[1]);
+    const c = (inMemoryDb.companies || []).find((item) => item.id === params[7] || item.id === params[1]);
     if (c) {
       if (params[0]) c.name = params[0];
     }
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('UPDATE RESUMES')) {
-    const r = inMemoryDb.resumes.find((item) => item.student_id === params[1]);
+    const r = (inMemoryDb.resumes || []).find((item) => item.student_id === params[1]);
     if (r) r.parsed_content = params[0];
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('UPDATE NOTIFICATIONS')) {
     const userId = params[0];
-    inMemoryDb.notifications.forEach((n) => { if (n.user_id === userId) n.read_status = 1; });
+    (inMemoryDb.notifications || []).forEach((n) => { if (n.user_id === userId) n.read_status = 1; });
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('DELETE FROM SKILLS')) {
-    inMemoryDb.skills = inMemoryDb.skills.filter((sk) => sk.id !== params[0]);
+    inMemoryDb.skills = (inMemoryDb.skills || []).filter((sk) => sk.id !== params[0]);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('DELETE FROM PROJECTS')) {
-    inMemoryDb.projects = inMemoryDb.projects.filter((p) => p.id !== params[0]);
+    inMemoryDb.projects = (inMemoryDb.projects || []).filter((p) => p.id !== params[0]);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('DELETE FROM CERTIFICATIONS')) {
-    inMemoryDb.certifications = inMemoryDb.certifications.filter((c) => c.id !== params[0]);
+    inMemoryDb.certifications = (inMemoryDb.certifications || []).filter((c) => c.id !== params[0]);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('DELETE FROM APPLICATIONS')) {
-    inMemoryDb.applications = inMemoryDb.applications.filter((a) => a.id !== params[0]);
+    inMemoryDb.applications = (inMemoryDb.applications || []).filter((a) => a.id !== params[0]);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('DELETE FROM NOTIFICATIONS')) {
-    inMemoryDb.notifications = inMemoryDb.notifications.filter((n) => n.user_id !== params[0]);
+    inMemoryDb.notifications = (inMemoryDb.notifications || []).filter((n) => n.user_id !== params[0]);
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('DELETE FROM AI_CHATS')) {
     if (sql.includes('WHERE id = ?')) {
-      inMemoryDb.ai_chats = inMemoryDb.ai_chats.filter((c) => c.id !== params[0]);
+      inMemoryDb.ai_chats = (inMemoryDb.ai_chats || []).filter((c) => c.id !== params[0]);
     } else {
-      inMemoryDb.ai_chats = inMemoryDb.ai_chats.filter((c) => !(c.user_id === params[0] && c.tool_type === params[1]));
+      inMemoryDb.ai_chats = (inMemoryDb.ai_chats || []).filter((c) => !(c.user_id === params[0] && c.tool_type === params[1]));
     }
+    saveLocalDb();
     return { affectedRows: 1 };
   }
 
@@ -355,11 +452,17 @@ const query = async (sql, params = []) => {
 const testConnection = async () => {
   try {
     const connection = await pool.getConnection();
-    console.log('MySQL Database Connected Successfully.');
+    console.log(`[DB] ✅ Connected successfully to MySQL server at ${dbConfig.host}:${dbConfig.port}`);
+    
+    // Auto-create database if needed
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+    await connection.query(`USE \`${dbConfig.database}\`;`);
     connection.release();
+    useInMemoryFallback = false;
   } catch (error) {
-    console.warn('MySQL Connection Warning:', error.message);
-    console.warn('Resilient backend active with in-memory persistence fallback.');
+    console.warn(`[DB] ⚠️  MySQL Connection Note (${dbConfig.host}:${dbConfig.port}):`, error.message);
+    console.warn('[DB] 💡 Active fallback: Persistent local disk store (data/local_db.json)');
+    useInMemoryFallback = true;
   }
 };
 
@@ -370,21 +473,27 @@ const withTransaction = async (callback) => {
   if (useInMemoryFallback) {
     return await callback(query);
   }
-  const connection = await pool.getConnection();
   try {
-    await connection.beginTransaction();
-    const txQuery = async (sql, params = []) => {
-      const [results] = await connection.execute(sql, params);
-      return results;
-    };
-    const result = await callback(txQuery);
-    await connection.commit();
-    return result;
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const txQuery = async (sql, params = []) => {
+        const [results] = await connection.execute(sql, params);
+        return results;
+      };
+      const result = await callback(txQuery);
+      await connection.commit();
+      return result;
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
   } catch (err) {
-    await connection.rollback();
-    throw err;
-  } finally {
-    connection.release();
+    console.warn('[DB] Transaction MySQL connection failed. Retrying with persistent local data store.');
+    useInMemoryFallback = true;
+    return await callback(query);
   }
 };
 

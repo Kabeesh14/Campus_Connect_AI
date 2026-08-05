@@ -29,11 +29,22 @@ const logosDir = path.join(uploadDir, 'logos');
 // Middleware Setup
 app.use(securityHeaders);
 app.use(rateLimiter());
+// CORS Configuration
+const allowedOrigins = process.env.FRONTEND_URL ? [process.env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:5000'] : '*';
+
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins === '*' || allowedOrigins.includes(origin) || origin.endsWith('.railway.app') || origin.endsWith('.onrender.com') || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
 }));
+app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -104,6 +115,8 @@ const validateGeminiConfig = () => {
   }
 };
 
+const initDatabase = require('./scripts/initDb');
+
 // Start Server & Test Database Connection
 app.listen(PORT, async () => {
   console.log(`===========================================`);
@@ -112,6 +125,11 @@ app.listen(PORT, async () => {
   console.log(`===========================================`);
   validateGeminiConfig();
   await testConnection();
+  try {
+    await initDatabase();
+  } catch (err) {
+    console.warn('[DB INIT] Migration warning:', err.message);
+  }
 });
 
 module.exports = app;

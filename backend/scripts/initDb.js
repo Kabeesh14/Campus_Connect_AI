@@ -6,20 +6,40 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
-const initDatabase = async () => {
-  const host = process.env.DB_HOST || 'localhost';
-  const port = parseInt(process.env.DB_PORT || '3306', 10);
-  const user = process.env.DB_USER || 'root';
-  const password = process.env.DB_PASSWORD || '';
-  const dbName = process.env.DB_NAME || 'campus_connect_db';
+const parseDbConfig = () => {
+  const dbUrl = process.env.MYSQL_URL || process.env.DATABASE_URL || process.env.MYSQL_PUBLIC_URL;
+  if (dbUrl && dbUrl.startsWith('mysql')) {
+    try {
+      const parsed = new URL(dbUrl);
+      return {
+        host: parsed.hostname,
+        port: parseInt(parsed.port || '3306', 10),
+        user: decodeURIComponent(parsed.username || 'root'),
+        password: decodeURIComponent(parsed.password || ''),
+        database: parsed.pathname ? parsed.pathname.replace(/^\//, '') : 'campus_connect_db',
+      };
+    } catch (e) {}
+  }
+  return {
+    host: process.env.MYSQLHOST || process.env.MYSQL_HOST || process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.MYSQLPORT || process.env.MYSQL_PORT || process.env.DB_PORT || '3306', 10),
+    user: process.env.MYSQLUSER || process.env.MYSQL_USER || process.env.DB_USER || 'root',
+    password: process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || '',
+    database: process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'campus_connect_db',
+  };
+};
 
-  console.log(`Connecting to MySQL server at ${host}:${port}...`);
+const initDatabase = async () => {
+  const { host, port, user, password, database: dbName } = parseDbConfig();
+  const ssl = process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : false;
+
+  console.log(`[DB INIT] Connecting to MySQL server at ${host}:${port}...`);
   let connection;
 
   try {
     // 1. Connect without selecting database to create database if not exists
-    connection = await mysql.createConnection({ host, port, user, password });
-    console.log(`Creating database '${dbName}' if not exists...`);
+    connection = await mysql.createConnection({ host, port, user, password, ssl });
+    console.log(`[DB INIT] Creating database '${dbName}' if not exists...`);
     await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     await connection.query(`USE \`${dbName}\`;`);
 
