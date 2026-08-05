@@ -16,7 +16,7 @@ const parseDbConfig = () => {
         port: parseInt(parsed.port || '3306', 10),
         user: decodeURIComponent(parsed.username || 'root'),
         password: decodeURIComponent(parsed.password || ''),
-        database: parsed.pathname ? parsed.pathname.replace(/^\//, '') : 'campus_connect_db',
+        database: parsed.pathname ? parsed.pathname.replace(/^\//, '') : (process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'railway'),
       };
     } catch (e) {}
   }
@@ -25,7 +25,7 @@ const parseDbConfig = () => {
     port: parseInt(process.env.MYSQLPORT || process.env.MYSQL_PORT || process.env.DB_PORT || '3306', 10),
     user: process.env.MYSQLUSER || process.env.MYSQL_USER || process.env.DB_USER || 'root',
     password: process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || '',
-    database: process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'campus_connect_db',
+    database: process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'railway',
   };
 };
 
@@ -33,34 +33,50 @@ const initDatabase = async () => {
   const { host, port, user, password, database: dbName } = parseDbConfig();
   const ssl = process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : false;
 
-  console.log(`[DB INIT] Connecting to MySQL server at ${host}:${port}...`);
+  console.log(`[DB INIT] Connecting to MySQL server at ${host}:${port} (target db: '${dbName}')...`);
   let connection;
 
   try {
-    // 1. Connect without selecting database to create database if not exists
-    connection = await mysql.createConnection({ host, port, user, password, ssl });
-    console.log(`[DB INIT] Creating database '${dbName}' if not exists...`);
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
-    await connection.query(`USE \`${dbName}\`;`);
+    // 1. Connect directly to target database if possible
+    try {
+      connection = await mysql.createConnection({
+        host,
+        port,
+        user,
+        password,
+        database: dbName,
+        ssl,
+        multipleStatements: true,
+      });
+      console.log(`[DB INIT] Connected directly to database '${dbName}'`);
+    } catch (connErr) {
+      console.log(`[DB INIT] Direct connection to '${dbName}' note (${connErr.message}). Attempting server connection & db creation...`);
+      connection = await mysql.createConnection({
+        host,
+        port,
+        user,
+        password,
+        ssl,
+        multipleStatements: true,
+      });
+      try {
+        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+      } catch (e) {
+        console.warn(`[DB INIT] CREATE DATABASE warning: ${e.message}`);
+      }
+      await connection.query(`USE \`${dbName}\`;`);
+    }
 
     // 2. Read and execute DDL statements from schema.sql
     const schemaPath = path.join(__dirname, '../config/schema.sql');
     const sqlContent = fs.readFileSync(schemaPath, 'utf8');
-    
-    // Split queries by semicolon
-    const statements = sqlContent
-      .split(';')
-      .map((stmt) => stmt.trim())
-      .filter((stmt) => stmt.length > 0 && !stmt.startsWith('--'));
 
-    console.log(`Executing ${statements.length} schema statements...`);
-    for (const stmt of statements) {
-      await connection.query(stmt);
-    }
-    console.log('Database tables created successfully.');
+    console.log(`[DB INIT] Executing schema DDL statements...`);
+    await connection.query(sqlContent);
+    console.log('[DB INIT] Database tables created successfully.');
 
     // 3. Seed default users & records
-    console.log('Seeding initial data...');
+    console.log('[DB INIT] Seeding initial data...');
     const hashedStudentPwd = await bcrypt.hash('password', 10);
     const hashedOfficerPwd = await bcrypt.hash('password', 10);
     const hashedRecruiterPwd = await bcrypt.hash('password', 10);
@@ -91,9 +107,9 @@ const initDatabase = async () => {
       ('r-1', 'u-recruiter', 'Sarah Jenkins', 'Lead Technical Recruiter');
     `);
 
-    console.log('Database Initialization and Seeding Completed Successfully!');
+    console.log('[DB INIT] Database Initialization and Seeding Completed Successfully!');
   } catch (error) {
-    console.error('Database Initialization Failed:', error.message);
+    console.error('[DB INIT] Database Initialization Error:', error.message);
   } finally {
     if (connection) await connection.end();
   }

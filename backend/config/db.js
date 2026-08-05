@@ -16,7 +16,7 @@ const parseDbConfig = () => {
         port: parseInt(parsed.port || '3306', 10),
         user: decodeURIComponent(parsed.username || 'root'),
         password: decodeURIComponent(parsed.password || ''),
-        database: parsed.pathname ? parsed.pathname.replace(/^\//, '') : 'campus_connect_db',
+        database: parsed.pathname ? parsed.pathname.replace(/^\//, '') : (process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'railway'),
       };
     } catch (e) {
       console.warn('[DB] Failed to parse MYSQL_URL/DATABASE_URL, falling back to individual ENV vars');
@@ -28,7 +28,7 @@ const parseDbConfig = () => {
     port: parseInt(process.env.MYSQLPORT || process.env.MYSQL_PORT || process.env.DB_PORT || '3306', 10),
     user: process.env.MYSQLUSER || process.env.MYSQL_USER || process.env.DB_USER || 'root',
     password: process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || '',
-    database: process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'campus_connect_db',
+    database: process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.DB_NAME || 'railway',
   };
 };
 
@@ -452,11 +452,8 @@ const query = async (sql, params = []) => {
 const testConnection = async () => {
   try {
     const connection = await pool.getConnection();
-    console.log(`[DB] ✅ Connected successfully to MySQL server at ${dbConfig.host}:${dbConfig.port}`);
-    
-    // Auto-create database if needed
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
-    await connection.query(`USE \`${dbConfig.database}\`;`);
+    await connection.ping();
+    console.log(`[DB] ✅ Connected successfully to MySQL server at ${dbConfig.host}:${dbConfig.port} (database: ${dbConfig.database})`);
     connection.release();
     useInMemoryFallback = false;
   } catch (error) {

@@ -1,9 +1,6 @@
 -- Campus Connect AI Database Schema
 -- Production Ready Normalized MySQL Database
 
-CREATE DATABASE IF NOT EXISTS `campus_connect_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `campus_connect_db`;
-
 -- 1. Users Table
 CREATE TABLE IF NOT EXISTS `users` (
   `id` VARCHAR(36) NOT NULL,
