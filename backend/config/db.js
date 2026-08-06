@@ -367,11 +367,22 @@ const query = async (sql, params = []) => {
     return { affectedRows: 1 };
   }
 
+  if (cleanSql.includes('SET AVATAR = ?')) {
+    const s = (inMemoryDb.students || []).find((item) => item.user_id === params[1] || item.id === params[1]);
+    if (s) s.avatar = params[0];
+    const r = (inMemoryDb.recruiters || []).find((item) => item.user_id === params[1] || item.id === params[1]);
+    if (r) r.avatar = params[0];
+    const o = (inMemoryDb.placement_officers || []).find((item) => item.user_id === params[1] || item.id === params[1]);
+    if (o) o.avatar = params[0];
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
   if (cleanSql.startsWith('UPDATE STUDENTS')) {
-    const s = (inMemoryDb.students || []).find((item) => item.user_id === params[1] || item.id === params[7]);
+    const s = (inMemoryDb.students || []).find((item) => item.user_id === params[7] || item.user_id === params[1] || item.id === params[7]);
     if (s) {
-      if (params[0]) s.name = params[0];
-      if (params[1]) s.headline = params[1];
+      if (params[0] && typeof params[0] === 'string' && !params[0].startsWith('/uploads/')) s.name = params[0];
+      if (params[1] && typeof params[1] === 'string' && !params[1].startsWith('/uploads/')) s.headline = params[1];
       if (params[2]) s.department = params[2];
       if (params[3]) s.cgpa = params[3];
       if (params[4]) s.graduation_year = params[4];

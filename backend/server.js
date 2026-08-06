@@ -78,6 +78,12 @@ const aiRoutes = require('./routes/aiRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 
+const { verifyToken } = require('./middleware/authMiddleware');
+const { getMe } = require('./controllers/authController');
+
+// Direct profile endpoint
+app.get('/api/profile', verifyToken, getMe);
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/student', studentRoutes);

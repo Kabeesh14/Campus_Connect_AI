@@ -30,7 +30,7 @@ export function setAuthToken(token: string | null): void {
   }
 }
 
-export function getMediaUrl(pathOrUrl: string | undefined | null): string {
+export function getImageUrl(pathOrUrl: string | undefined | null): string {
   const fallback = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
   if (!pathOrUrl || typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) {
     return fallback;
@@ -41,6 +41,10 @@ export function getMediaUrl(pathOrUrl: string | undefined | null): string {
   }
   const baseUrl = API_BASE_URL.replace(/\/api$/, '');
   return `${baseUrl}${clean.startsWith('/') ? '' : '/'}${clean}`;
+}
+
+export function getMediaUrl(pathOrUrl: string | undefined | null): string {
+  return getImageUrl(pathOrUrl);
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

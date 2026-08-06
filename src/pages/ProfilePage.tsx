@@ -231,7 +231,8 @@ export default function ProfilePage() {
               ) : (
                 <>
                   <h2 className="mt-4 font-display text-xl font-bold">{name}</h2>
-                  <p className="text-sm text-soft">{headline}</p>
+                  <p className="text-xs text-soft">{user?.email}</p>
+                  <p className="mt-1 text-sm text-soft">{headline}</p>
                   <div className="mt-3 flex flex-wrap justify-center gap-2">
                     <Badge variant="primary">{department}</Badge>
                     <Badge variant="accent">CGPA {cgpa}</Badge>

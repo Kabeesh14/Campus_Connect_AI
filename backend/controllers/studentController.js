@@ -3,6 +3,33 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { query, withTransaction } = require('../config/db');
 
+const normalizeAvatarPath = (avatarStr) => {
+  const fallback = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+  if (!avatarStr || typeof avatarStr !== 'string' || !avatarStr.trim()) {
+    return fallback;
+  }
+  let clean = avatarStr.trim().replace(/\\/g, '/');
+  if (clean.includes('/uploads/avatars/')) {
+    const filename = clean.split('/uploads/avatars/').pop();
+    return `/uploads/avatars/${filename}`;
+  }
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:')) {
+    return clean;
+  }
+  return clean.startsWith('/') ? clean : `/${clean}`;
+};
+
+const sanitizeName = (rawName, email) => {
+  if (rawName && typeof rawName === 'string' && !rawName.startsWith('/uploads/') && !rawName.includes('.jpg') && !rawName.includes('.png')) {
+    return rawName;
+  }
+  if (email && typeof email === 'string') {
+    const prefix = email.split('@')[0];
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  }
+  return 'Student User';
+};
+
 /**
  * Get Logged-in Student's Complete Profile
  */
@@ -24,19 +51,16 @@ const getProfile = async (req, res, next) => {
     const certifications = await query('SELECT id, name, issuer, year FROM certifications WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
     const resumes = await query('SELECT id, file_name, file_path, file_size, mime_type, uploaded_at FROM resumes WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1', [student.id]);
 
-    // Parse JSON stacks if needed
     const formattedProjects = projects.map((p) => ({
       ...p,
-      stack: typeof p.stack === 'string' ? JSON.parse(p.stack) : p.stack || [],
+      stack: typeof p.stack === 'string' ? p.stack.split(',').map((s) => s.trim()) : p.stack,
     }));
 
     // Calculate profile completion percentage
     let completedFields = 0;
-    const totalFields = 8;
+    const totalFields = 6;
     if (student.name) completedFields++;
-    if (student.department) completedFields++;
-    if (student.cgpa) completedFields++;
-    if (student.graduation_year) completedFields++;
+    if (student.headline) completedFields++;
     if (student.avatar) completedFields++;
     if (skills.length > 0) completedFields++;
     if (formattedProjects.length > 0) completedFields++;
@@ -49,10 +73,10 @@ const getProfile = async (req, res, next) => {
         student: {
           id: student.id,
           userId: student.user_id,
-          name: student.name,
+          name: sanitizeName(student.name, req.user.email),
           email: req.user.email,
-          avatar: student.avatar || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200',
-          headline: student.headline || 'Student',
+          avatar: normalizeAvatarPath(student.avatar),
+          headline: (student.headline && !student.headline.startsWith('/uploads/') && student.headline !== student.user_id) ? student.headline : 'Student',
           department: student.department || 'Computer Science & Engineering',
           cgpa: student.cgpa ? parseFloat(student.cgpa) : 8.0,
           graduationYear: student.graduation_year || 2026,

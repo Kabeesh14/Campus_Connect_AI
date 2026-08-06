@@ -17,6 +17,33 @@ const generateToken = (user) => {
   );
 };
 
+const normalizeAvatarPath = (avatarStr) => {
+  const fallback = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+  if (!avatarStr || typeof avatarStr !== 'string' || !avatarStr.trim()) {
+    return fallback;
+  }
+  let clean = avatarStr.trim().replace(/\\/g, '/');
+  if (clean.includes('/uploads/avatars/')) {
+    const filename = clean.split('/uploads/avatars/').pop();
+    return `/uploads/avatars/${filename}`;
+  }
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:')) {
+    return clean;
+  }
+  return clean.startsWith('/') ? clean : `/${clean}`;
+};
+
+const sanitizeName = (rawName, email) => {
+  if (rawName && typeof rawName === 'string' && !rawName.startsWith('/uploads/') && !rawName.includes('.jpg') && !rawName.includes('.png')) {
+    return rawName;
+  }
+  if (email && typeof email === 'string') {
+    const prefix = email.split('@')[0];
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  }
+  return 'User';
+};
+
 /**
  * Fetch Full User Profile based on Role
  */
@@ -214,11 +241,11 @@ const login = async (req, res, next) => {
 
     const userObj = {
       id: user.id,
-      name: profile?.name || 'User',
+      name: sanitizeName(profile?.name, user.email),
       email: user.email,
       role: user.role,
-      avatar: profile?.avatar || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200',
-      headline: profile?.headline || '',
+      avatar: normalizeAvatarPath(profile?.avatar),
+      headline: (profile?.headline && !profile.headline.startsWith('/uploads/') && profile.headline !== user.id) ? profile.headline : (user.role === 'student' ? 'Student' : user.role),
       department: profile?.department || '',
       cgpa: profile?.cgpa ? parseFloat(profile.cgpa) : undefined,
       graduationYear: profile?.graduation_year || undefined,
@@ -249,11 +276,11 @@ const getMe = async (req, res, next) => {
 
     const userObj = {
       id: user.id,
-      name: profile?.name || 'User',
+      name: sanitizeName(profile?.name, user.email),
       email: user.email,
       role: user.role,
-      avatar: profile?.avatar || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200',
-      headline: profile?.headline || '',
+      avatar: normalizeAvatarPath(profile?.avatar),
+      headline: (profile?.headline && !profile.headline.startsWith('/uploads/') && profile.headline !== user.id) ? profile.headline : (user.role === 'student' ? 'Student' : user.role),
       department: profile?.department || '',
       cgpa: profile?.cgpa ? parseFloat(profile.cgpa) : undefined,
       graduationYear: profile?.graduation_year || undefined,
