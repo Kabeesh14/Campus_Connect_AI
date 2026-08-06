@@ -8,6 +8,7 @@ import { GlassCard, Reveal, Badge, GradientButton, GhostButton } from '../compon
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../utils/cn';
+import { getMediaUrl } from '../utils/api';
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
@@ -82,7 +83,7 @@ export default function SettingsPage() {
           <div className="mt-4 space-y-3">
             <div className="flex items-center justify-between rounded-xl border border-base bg-soft/40 p-4">
               <div className="flex items-center gap-3">
-                <img src={user?.avatar} alt={user?.name} className="h-10 w-10 rounded-full object-cover" />
+                <img src={getMediaUrl(user?.avatar)} alt={user?.name} className="h-10 w-10 rounded-full object-cover" />
                 <div><p className="text-sm font-semibold">{user?.name}</p><p className="text-xs text-soft">{user?.email}</p></div>
               </div>
               <Badge variant="primary" className="capitalize">{user?.role}</Badge>

@@ -9,8 +9,8 @@
   --text: 17 24 39; --text-soft: 107 114 128;
   --border: 226 226 236; --card: 255 255 255; --glass: 255 255 255;
   --input-text: #111827;
-  --input-placeholder: rgba(0, 0, 0, 0.45);
-  --input-caret: #8B5CF6;
+  --input-placeholder: rgba(0, 0, 0, 0.5);
+  --input-caret: #6366F1;
   --autofill-bg: rgba(244, 244, 250, 0.95);
 }
 .dark {
@@ -18,7 +18,7 @@
   --text: 255 255 255; --text-soft: 148 156 184;
   --border: 34 38 58; --card: 16 18 34; --glass: 22 26 46;
   --input-text: #FFFFFF;
-  --input-placeholder: rgba(255, 255, 255, 0.55);
+  --input-placeholder: rgba(255, 255, 255, 0.6);
   --input-caret: #8B5CF6;
   --autofill-bg: rgba(14, 16, 30, 0.95);
 }
@@ -35,20 +35,42 @@
     transition: background-color 0.4s ease, color 0.4s ease;
   }
 
-  /* Universal Form Control Base Rules */
+  /* Universal Form Controls - Global Text & Caret Visibility Fix */
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   textarea,
-  select {
-    color: var(--input-text);
-    caret-color: var(--input-caret);
-    -webkit-text-fill-color: var(--input-text);
-    opacity: 1;
+  select,
+  [contenteditable="true"] {
+    color: var(--input-text) !important;
+    -webkit-text-fill-color: var(--input-text) !important;
+    caret-color: var(--input-caret) !important;
+    opacity: 1 !important;
   }
 
-  /* Select Options Dropdown Styling */
-  select option {
-    background-color: rgb(var(--card));
-    color: var(--input-text);
+  /* Focus state for form controls */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+  textarea:focus,
+  select:focus {
+    color: var(--input-text) !important;
+    -webkit-text-fill-color: var(--input-text) !important;
+    caret-color: var(--input-caret) !important;
+  }
+
+  /* Disabled input state */
+  input:disabled,
+  textarea:disabled,
+  select:disabled {
+    color: var(--text-soft) !important;
+    -webkit-text-fill-color: var(--text-soft) !important;
+    opacity: 0.7 !important;
+    cursor: not-allowed;
+  }
+
+  /* Select options dropdown background & text */
+  select option,
+  select optgroup {
+    background-color: rgb(var(--card)) !important;
+    color: var(--input-text) !important;
+    -webkit-text-fill-color: var(--input-text) !important;
   }
 
   /* Placeholders */
@@ -56,25 +78,26 @@
   input::placeholder,
   textarea::placeholder,
   select::placeholder {
-    color: var(--input-placeholder);
-    -webkit-text-fill-color: var(--input-placeholder);
-    opacity: 1;
+    color: var(--input-placeholder) !important;
+    -webkit-text-fill-color: var(--input-placeholder) !important;
+    opacity: 1 !important;
   }
 
   /* Browser Autofill Overrides */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
   textarea:-webkit-autofill,
   textarea:-webkit-autofill:hover,
   textarea:-webkit-autofill:focus,
   select:-webkit-autofill,
   select:-webkit-autofill:hover,
   select:-webkit-autofill:focus {
-    -webkit-text-fill-color: var(--input-text);
-    box-shadow: 0 0 0px 1000px var(--autofill-bg) inset;
-    -webkit-box-shadow: 0 0 0px 1000px var(--autofill-bg) inset;
-    caret-color: var(--input-caret);
+    -webkit-text-fill-color: var(--input-text) !important;
+    box-shadow: 0 0 0px 1000px var(--autofill-bg) inset !important;
+    -webkit-box-shadow: 0 0 0px 1000px var(--autofill-bg) inset !important;
+    caret-color: var(--input-caret) !important;
     transition: background-color 5000s ease-in-out 0s;
   }
 
@@ -86,8 +109,8 @@
   .gradient-text input,
   .gradient-text textarea,
   .gradient-text select {
-    -webkit-text-fill-color: var(--input-text);
-    color: var(--input-text);
+    -webkit-text-fill-color: var(--input-text) !important;
+    color: var(--input-text) !important;
   }
 
   .glass {

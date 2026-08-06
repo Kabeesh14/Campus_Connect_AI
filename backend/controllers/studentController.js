@@ -120,7 +120,13 @@ const uploadAvatar = async (req, res, next) => {
     const userId = req.user.id;
     const avatarUrl = `/uploads/avatars/${req.file.filename}`;
 
-    await query('UPDATE students SET avatar = ? WHERE user_id = ?', [avatarUrl, userId]);
+    if (req.user.role === 'recruiter') {
+      await query('UPDATE recruiters SET avatar = ? WHERE user_id = ?', [avatarUrl, userId]);
+    } else if (req.user.role === 'officer') {
+      await query('UPDATE placement_officers SET avatar = ? WHERE user_id = ?', [avatarUrl, userId]);
+    } else {
+      await query('UPDATE students SET avatar = ? WHERE user_id = ?', [avatarUrl, userId]);
+    }
 
     return res.status(200).json({
       success: true,

@@ -9,6 +9,7 @@ import {
 import { GlassCard, ProgressRing, ProgressBar, Reveal, Badge, GradientButton } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { jobs, companies, interviews, notifications, activities, skillsProgress } from '../data/mockData';
+import { getMediaUrl } from '../utils/api';
 
 function ProfileWidget() {
   const { user } = useAuth();
@@ -44,7 +45,7 @@ function ProfileWidget() {
       <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/20 blur-3xl" />
       <div className="relative flex items-center gap-4">
         <div className="relative">
-          <img src={profile.avatar} alt={profile.name} className="h-16 w-16 rounded-2xl object-cover ring-2 ring-primary/30" />
+          <img src={getMediaUrl(profile.avatar)} alt={profile.name} className="h-16 w-16 rounded-2xl object-cover ring-2 ring-primary/30" />
           <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-success ring-2 ring-[rgb(var(--card))]" />
         </div>
         <div className="flex-1">

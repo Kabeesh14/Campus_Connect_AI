@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { notifications as notifData } from '../data/mockData';
 import { cn } from '../utils/cn';
+import { getMediaUrl } from '../utils/api';
 import type { Role } from '../types';
 
 interface NavItem { to: string; label: string; icon: typeof LayoutDashboard; roles?: Role[] }
@@ -241,7 +242,7 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
         </div>
         <div className="relative">
           <button onClick={() => setMenuOpen(!menuOpen)} className="flex items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-soft">
-            <img src={user?.avatar} alt={user?.name} className="h-8 w-8 rounded-full object-cover ring-2 ring-primary/20" />
+            <img src={getMediaUrl(user?.avatar)} alt={user?.name} className="h-8 w-8 rounded-full object-cover ring-2 ring-primary/20" />
             <span className="hidden text-sm font-semibold sm:block">{user?.name}</span>
           </button>
           <AnimatePresence>

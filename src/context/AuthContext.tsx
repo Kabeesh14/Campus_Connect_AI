@@ -7,6 +7,7 @@ interface AuthContextValue {
   token: string | null;
   login: (email: string, password?: string, role?: Role) => Promise<User>;
   signup: (name: string, email: string, password?: string, role?: Role) => Promise<User>;
+  updateUser: (fields: Partial<User>) => void;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (email: string, newPassword: string) => Promise<void>;
   logout: () => void;
@@ -32,6 +33,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(t);
     setToken(t);
     setUser(u);
+  };
+
+  const updateUser = (fields: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, ...fields };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   useEffect(() => {
@@ -96,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => persist(null, null);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, signup, forgotPassword, resetPassword, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, signup, updateUser, forgotPassword, resetPassword, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

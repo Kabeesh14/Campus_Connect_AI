@@ -51,29 +51,29 @@ const logoStorage = multer.diskStorage({
 });
 
 const imageFilter = (req, file, cb) => {
-  const allowedExts = /^\.(jpeg|jpg|png|gif|webp)$/i;
-  const allowedMimes = /^image\/(jpeg|jpg|png|gif|webp)$/i;
+  const allowedExts = /^\.(jpeg|jpg|png|gif|webp|svg|avif|heic)$/i;
   const extValid = allowedExts.test(path.extname(file.originalname).toLowerCase());
-  const mimeValid = allowedMimes.test(file.mimetype.toLowerCase());
-  if (extValid && mimeValid) {
+  const isImageMime = file.mimetype && file.mimetype.toLowerCase().startsWith('image/');
+  if (extValid || isImageMime) {
     cb(null, true);
   } else {
-    cb(new Error('Only valid image files (jpeg, jpg, png, gif, webp) with matching MIME types are allowed!'), false);
+    cb(new Error('Only valid image files (jpeg, jpg, png, gif, webp, svg) are allowed!'), false);
   }
 };
 
 const documentFilter = (req, file, cb) => {
-  const docMap = {
-    '.pdf': ['application/pdf'],
-    '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-    '.doc': ['application/msword', 'application/x-msword'],
-  };
-  const ext = path.extname(file.originalname).toLowerCase();
-  const allowed = docMap[ext];
-  if (allowed && allowed.includes(file.mimetype.toLowerCase())) {
+  const allowedExts = /^\.(pdf|docx|doc)$/i;
+  const extValid = allowedExts.test(path.extname(file.originalname).toLowerCase());
+  const isDocMime = file.mimetype && (
+    file.mimetype.includes('pdf') ||
+    file.mimetype.includes('word') ||
+    file.mimetype.includes('officedocument') ||
+    file.mimetype.includes('octet-stream')
+  );
+  if (extValid || isDocMime) {
     cb(null, true);
   } else {
-    cb(new Error('Only valid PDF or Word documents (pdf, doc, docx) with matching MIME types are allowed!'), false);
+    cb(new Error('Only valid PDF or Word documents (pdf, doc, docx) are allowed!'), false);
   }
 };
 

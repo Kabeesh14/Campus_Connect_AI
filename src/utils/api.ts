@@ -30,6 +30,19 @@ export function setAuthToken(token: string | null): void {
   }
 }
 
+export function getMediaUrl(pathOrUrl: string | undefined | null): string {
+  const fallback = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+  if (!pathOrUrl || typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) {
+    return fallback;
+  }
+  const clean = pathOrUrl.trim();
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:')) {
+    return clean;
+  }
+  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
+  return `${baseUrl}${clean.startsWith('/') ? '' : '/'}${clean}`;
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface ApiResponse<T = any> {
   success: boolean;

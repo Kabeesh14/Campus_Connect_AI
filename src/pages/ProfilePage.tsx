@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { GlassCard, Reveal, Badge, GradientButton, ProgressBar, ProgressRing } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
-import { apiRequest } from '../utils/api';
+import { apiRequest, getMediaUrl } from '../utils/api';
 
 interface SkillItem { id: string; name: string; level: number; category: string }
 interface ProjectItem { id: string; name: string; desc: string; stack: string[]; link: string }
@@ -21,7 +21,7 @@ const defaultAchievements = [
 ];
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [editing, setEditing] = useState(false);
 
   // Profile Form States
@@ -47,30 +47,47 @@ export default function ProfilePage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const resumeInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch initial profile from backend
+  // Load backend profile
   useEffect(() => {
-    const fetchProfile = async () => {
+    const loadProfile = async () => {
       try {
         const res = await apiRequest('/student/profile');
-        if (res.success && res.data) {
-          const { student, skills: sk, projects: pr, certifications: cr, resume: rs } = res.data;
+        if (res.success && res.data?.student) {
+          const student = res.data.student;
           setName(student.name);
           setHeadline(student.headline);
           setDepartment(student.department);
           setCgpa(student.cgpa);
           setGraduationYear(student.graduationYear);
           setAvatar(student.avatar);
-          setCompletion(student.completion || 82);
-          if (sk && sk.length > 0) setSkills(sk);
-          if (pr && pr.length > 0) setProjects(pr);
-          if (cr && cr.length > 0) setCertifications(cr);
-          if (rs) setResume(rs);
+          setCompletion(student.completion || 78);
+          if (res.data.skills) setSkills(res.data.skills);
+          if (res.data.projects) setProjects(res.data.projects);
+          if (res.data.certifications) setCertifications(res.data.certifications);
+          if (res.data.resume) {
+            setResume({
+              id: res.data.resume.id,
+              fileName: res.data.resume.file_name,
+              filePath: res.data.resume.file_path,
+              fileSize: res.data.resume.file_size,
+              mimeType: res.data.resume.file_type,
+              uploadedAt: res.data.resume.uploaded_at,
+            });
+          }
+          updateUser({
+            name: student.name,
+            headline: student.headline,
+            department: student.department,
+            cgpa: student.cgpa,
+            graduationYear: student.graduationYear,
+            avatar: student.avatar,
+          });
         }
       } catch {
-        // Fallback to local states if offline
+        // Fallback to local state if server fails
       }
     };
-    fetchProfile();
+    loadProfile();
   }, []);
 
   // Save profile edits
@@ -80,6 +97,7 @@ export default function ProfilePage() {
         method: 'PUT',
         body: JSON.stringify({ name, headline, department, cgpa, graduationYear }),
       });
+      updateUser({ name, headline, department, cgpa, graduationYear });
     } catch {
       // Local update fallback
     } finally {
@@ -104,6 +122,7 @@ export default function ProfilePage() {
       });
       if (res.success && res.avatar) {
         setAvatar(res.avatar);
+        updateUser({ avatar: res.avatar });
       } else {
         setAvatarError(res.message || 'Failed to upload profile photo.');
       }
@@ -191,7 +210,7 @@ export default function ProfilePage() {
             <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/20 blur-3xl" />
             <div className="relative flex flex-col items-center text-center">
               <div className="relative">
-                <img src={avatar || user?.avatar} alt={name} className="h-28 w-28 rounded-3xl object-cover ring-4 ring-primary/20" />
+                <img src={getMediaUrl(avatar || user?.avatar)} alt={name} className="h-28 w-28 rounded-3xl object-cover ring-4 ring-primary/20" />
                 <button onClick={() => avatarInputRef.current?.click()} className="absolute -bottom-1 -right-1 rounded-xl bg-gradient-to-br from-primary to-secondary p-2 text-white shadow-glow transition-transform hover:scale-105">
                   <Upload size={16} />
                 </button>
