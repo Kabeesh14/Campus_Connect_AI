@@ -11,15 +11,18 @@ import { apiRequest } from '../utils/api';
 import { cn } from '../utils/cn';
 import type { Job } from '../types';
 
+import { getImageUrl } from '../utils/api';
+
 export function JobsPage() {
-  const [jobsList, setJobsList] = useState<Job[]>(mockJobs);
+  const [jobsList, setJobsList] = useState<Job[]>([]);
   const [query, setQuery] = useState('');
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<'match' | 'recent'>('match');
   const [showFilters, setShowFilters] = useState(false);
   const [location, setLocation] = useState('all');
   const [minMatch, setMinMatch] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [contractType, setContractType] = useState('all');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -29,32 +32,37 @@ export function JobsPage() {
         if (query) params.append('search', query);
         if (location !== 'all') params.append('location', location);
         if (minMatch) params.append('minMatch', minMatch.toString());
+        if (contractType !== 'all') params.append('contractType', contractType);
         params.append('sortBy', sortBy);
 
         const res = await apiRequest(`/jobs?${params.toString()}`);
         if (res.success && res.jobs) {
           setJobsList(res.jobs);
+        } else {
+          setJobsList(mockJobs);
         }
       } catch {
-        // Fallback to mock filtering if offline
+        setJobsList(mockJobs);
       } finally {
         setLoading(false);
       }
     };
 
     fetchJobs();
-  }, [query, location, minMatch, sortBy]);
+  }, [query, location, minMatch, sortBy, contractType]);
 
-  const locations = ['all', ...Array.from(new Set(jobsList.map((j) => j.location)))];
+  const locations = ['all', ...Array.from(new Set(jobsList.map((j) => j.location).filter(Boolean)))];
 
   const filtered = useMemo(() => jobsList
     .filter((j) => {
-      const mq = j.role.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase());
+      const q = query.toLowerCase();
+      const mq = !q || (j.role || j.title || '').toLowerCase().includes(q) || j.company.toLowerCase().includes(q) || (j.category || '').toLowerCase().includes(q);
       const ml = location === 'all' || j.location === location;
       const mm = (j.match || 80) >= minMatch;
-      return mq && ml && mm;
+      const mc = contractType === 'all' || (j.contractType || j.type || '').toLowerCase().includes(contractType.toLowerCase());
+      return mq && ml && mm && mc;
     })
-    .sort((a, b) => sortBy === 'match' ? (b.match || 0) - (a.match || 0) : (a.postedDays || 0) - (b.postedDays || 0)), [jobsList, query, location, minMatch, sortBy]);
+    .sort((a, b) => sortBy === 'match' ? (b.match || 0) - (a.match || 0) : (a.postedDays || 0) - (b.postedDays || 0)), [jobsList, query, location, minMatch, sortBy, contractType]);
 
   const toggleSave = (id: string) => setSaved((p) => {
     const n = new Set(p);
@@ -67,7 +75,7 @@ export function JobsPage() {
       <Reveal>
         <div>
           <h1 className="font-display text-2xl font-bold sm:text-3xl">Open Positions</h1>
-          <p className="mt-1 text-soft">AI-ranked roles matched to your profile.</p>
+          <p className="mt-1 text-soft">Live Jobs matched to your profile via Adzuna API.</p>
         </div>
       </Reveal>
 
@@ -75,7 +83,7 @@ export function JobsPage() {
         <GlassCard className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-soft" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search roles, companies..."
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search live roles, skills, companies..."
               className="w-full rounded-xl border border-base bg-soft/40 py-3 pl-12 pr-4 text-sm outline-none focus:border-primary" />
           </div>
           <div className="flex gap-2">
@@ -96,14 +104,24 @@ export function JobsPage() {
       <AnimatePresence>
         {showFilters && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-            <GlassCard className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <GlassCard className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wider text-soft">Location</label>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {locations.map((l) => (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {locations.slice(0, 6).map((l) => (
                     <button key={l} onClick={() => setLocation(l)}
-                      className={cn('rounded-full border px-3 py-1.5 text-xs font-semibold transition-all',
+                      className={cn('rounded-full border px-3 py-1 text-xs font-semibold transition-all',
                         location === l ? 'border-primary bg-primary/10 text-primary' : 'border-base text-soft hover:bg-soft')}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-soft">Job Type</label>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {['all', 'full_time', 'part_time', 'internship', 'contract'].map((t) => (
+                    <button key={t} onClick={() => setContractType(t)}
+                      className={cn('rounded-full border px-3 py-1 text-xs font-semibold capitalize transition-all',
+                        contractType === t ? 'border-primary bg-primary/10 text-primary' : 'border-base text-soft hover:bg-soft')}>{t.replace('_', ' ')}</button>
                   ))}
                 </div>
               </div>
@@ -126,41 +144,63 @@ export function JobsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {filtered.map((j, i) => (
-            <Reveal key={j.id} delay={i * 0.06}>
-              <GlassCard hover className="group h-full">
-                <div className="flex items-start gap-4">
-                  <img src={j.logo} alt={j.company} className="h-12 w-12 rounded-2xl object-cover ring-2 ring-primary/15" />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-display text-lg font-semibold">{j.role}</h3>
-                    <p className="text-sm text-soft">{j.company} • {j.location}</p>
+            <Reveal key={j.id} delay={i * 0.05}>
+              <GlassCard hover className="group h-full flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start gap-4">
+                    <img
+                      src={getImageUrl(j.logo)}
+                      alt={j.company}
+                      onError={(e) => {
+                        e.currentTarget.src = j.defaultLogo || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                      }}
+                      className="h-12 w-12 rounded-2xl object-cover ring-2 ring-primary/15"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-display text-lg font-semibold">{j.role || j.title}</h3>
+                      <p className="text-sm text-soft">{j.company} • {j.location}</p>
+                    </div>
+                    <button onClick={() => toggleSave(j.id)} className="rounded-lg p-2 text-soft transition-colors hover:bg-soft">
+                      <Bookmark size={18} className={saved.has(j.id) ? 'fill-primary text-primary' : ''} />
+                    </button>
                   </div>
-                  <button onClick={() => toggleSave(j.id)} className="rounded-lg p-2 text-soft transition-colors hover:bg-soft">
-                    <Bookmark size={18} className={saved.has(j.id) ? 'fill-primary text-primary' : ''} />
-                  </button>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge variant="success"><Brain size={12} /> {j.match}% match</Badge>
-                  <Badge variant="primary">{j.type}</Badge>
-                  {j.remote && <Badge variant="accent">Remote</Badge>}
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl border border-base bg-soft/40 p-3">
-                    <p className="text-xs text-soft">Package</p><p className="font-semibold">{j.package}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Badge variant="success"><Brain size={12} /> {j.match}% match</Badge>
+                    <Badge variant="primary">{j.type || 'Full Time'}</Badge>
+                    {j.remote && <Badge variant="accent">Remote</Badge>}
+                    {j.category && <Badge variant="neutral">{j.category}</Badge>}
                   </div>
-                  <div className="rounded-xl border border-base bg-soft/40 p-3">
-                    <p className="text-xs text-soft">Deadline</p><p className="font-semibold">{j.deadline}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-xl border border-base bg-soft/40 p-3">
+                      <p className="text-xs text-soft">Package / Salary</p><p className="font-semibold">{j.package || j.salary}</p>
+                    </div>
+                    <div className="rounded-xl border border-base bg-soft/40 p-3">
+                      <p className="text-xs text-soft">Deadline</p><p className="font-semibold">{j.deadline}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {j.skills.slice(0, 4).map((s) => (
-                    <span key={s} className="rounded-lg bg-soft px-2.5 py-1 text-xs font-medium text-soft">{s}</span>
-                  ))}
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {(j.skills || []).slice(0, 4).map((s) => (
+                      <span key={s} className="rounded-lg bg-soft px-2.5 py-1 text-xs font-medium text-soft">{s}</span>
+                    ))}
+                  </div>
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t border-base pt-4">
                   <span className="text-xs text-soft">Posted {j.postedDays}d ago</span>
-                  <Link to={`/jobs/${j.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
-                    View & Apply <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
-                  </Link>
+                  <div className="flex gap-2">
+                    {j.redirectUrl && (
+                      <a
+                        href={j.redirectUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-semibold rounded-lg bg-primary/10 px-3 py-1.5 text-primary hover:bg-primary/20"
+                      >
+                        Apply <Zap size={12} />
+                      </a>
+                    )}
+                    <Link to={`/jobs/${j.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
+                      Details <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
+                    </Link>
+                  </div>
                 </div>
               </GlassCard>
             </Reveal>
@@ -191,6 +231,9 @@ export function JobDetailPage() {
 
   const handleApply = async () => {
     if (!id || applied || applying) return;
+    if (job?.redirectUrl) {
+      window.open(job.redirectUrl, '_blank', 'noopener,noreferrer');
+    }
     setApplying(true);
     setErrorMsg(null);
     try {
@@ -227,7 +270,14 @@ export function JobDetailPage() {
             <GlassCard gradient className="relative overflow-hidden">
               <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/20 blur-3xl" />
               <div className="relative flex items-start gap-4">
-                <img src={job.logo} alt={job.company} className="h-16 w-16 rounded-2xl object-cover ring-2 ring-primary/20" />
+                <img
+                  src={getImageUrl(job.logo)}
+                  alt={job.company}
+                  onError={(e) => {
+                    e.currentTarget.src = job.defaultLogo || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                  }}
+                  className="h-16 w-16 rounded-2xl object-cover ring-2 ring-primary/20"
+                />
                 <div className="flex-1">
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="success"><Brain size={12} /> {job.match}% AI Match</Badge>

@@ -80,9 +80,12 @@ const analyticsRoutes = require('./routes/analyticsRoutes');
 
 const { verifyToken } = require('./middleware/authMiddleware');
 const { getMe } = require('./controllers/authController');
+const { getCompanies, getCompanyJobs } = require('./controllers/jobsController');
 
-// Direct profile endpoint
+// Direct profile & company endpoints
 app.get('/api/profile', verifyToken, getMe);
+app.get('/api/companies', verifyToken, getCompanies);
+app.get('/api/company/:company/jobs', verifyToken, getCompanyJobs);
 
 // API Routes
 app.use('/api/auth', authRoutes);

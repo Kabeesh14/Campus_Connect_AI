@@ -2,7 +2,13 @@ const express = require('express');
 const router = express.Router();
 const {
   getJobs,
+  searchJobs,
   getJobById,
+  getCompanyJobs,
+  getCompanies,
+} = require('../controllers/jobsController');
+
+const {
   applyToJob,
   withdrawApplication,
   getUserApplications,
@@ -10,12 +16,14 @@ const {
 
 const { verifyToken } = require('../middleware/authMiddleware');
 
-router.use(verifyToken);
-
-router.get('/', getJobs);
-router.get('/applications', getUserApplications);
-router.get('/:id', getJobById);
-router.post('/:id/apply', applyToJob);
-router.delete('/applications/:id', withdrawApplication);
+// Public / Protected Jobs API Routes
+router.get('/', verifyToken, getJobs);
+router.get('/search', verifyToken, searchJobs);
+router.get('/companies', verifyToken, getCompanies);
+router.get('/company/:company', verifyToken, getCompanyJobs);
+router.get('/applications', verifyToken, getUserApplications);
+router.get('/:id', verifyToken, getJobById);
+router.post('/:id/apply', verifyToken, applyToJob);
+router.delete('/applications/:id', verifyToken, withdrawApplication);
 
 module.exports = router;

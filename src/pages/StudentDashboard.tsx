@@ -80,29 +80,50 @@ function StatRing({ label, value, icon: Icon, color }: { label: string; value: n
 }
 
 function TodayOpportunities() {
+  const [liveJobs, setLiveJobs] = useState<Job[]>([]);
+
+  useEffect(() => {
+    import('../utils/api').then(({ apiRequest }) => {
+      apiRequest('/jobs').then((res) => {
+        if (res.success && res.jobs) setLiveJobs(res.jobs.slice(0, 3));
+      }).catch(() => {});
+    });
+  }, []);
+
+  const displayJobs = liveJobs.length > 0 ? liveJobs : jobs.slice(0, 3);
+
   return (
     <GlassCard className="lg:col-span-2">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="font-display text-lg font-semibold">Today's Opportunities</h3>
-          <p className="text-xs text-soft">AI-matched roles for you</p>
+          <p className="text-xs text-soft">Live AI-matched roles for you</p>
         </div>
         <Link to="/jobs" className="text-sm font-semibold text-primary">View all</Link>
       </div>
       <div className="space-y-3">
-        {jobs.slice(0, 3).map((j, i) => (
-          <motion.div key={j.id} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
-            className="group flex items-center gap-3 rounded-2xl border border-base bg-soft/40 p-3 transition-all hover:border-primary/40 hover:bg-soft">
-            <img src={j.logo} alt={j.company} className="h-11 w-11 rounded-xl object-cover" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{j.role}</p>
-              <p className="text-xs text-soft">{j.company} • {j.location}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="success">{j.match}% match</Badge>
-              <ArrowRight size={16} className="text-soft transition-transform group-hover:translate-x-1 group-hover:text-primary" />
-            </div>
-          </motion.div>
+        {displayJobs.map((j, i) => (
+          <Link key={j.id} to={`/jobs/${j.id}`}>
+            <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+              className="group flex items-center gap-3 rounded-2xl border border-base bg-soft/40 p-3 transition-all hover:border-primary/40 hover:bg-soft">
+              <img
+                src={getMediaUrl(j.logo)}
+                alt={j.company}
+                onError={(e) => {
+                  e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                }}
+                className="h-11 w-11 rounded-xl object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{j.role || j.title}</p>
+                <p className="text-xs text-soft">{j.company} • {j.location}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="success">{j.match || 90}% match</Badge>
+                <ArrowRight size={16} className="text-soft transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+              </div>
+            </motion.div>
+          </Link>
         ))}
       </div>
     </GlassCard>
@@ -140,27 +161,46 @@ function InterviewTimeline() {
 }
 
 function RecommendedCompanies() {
+  const [liveCompanies, setLiveCompanies] = useState<Company[]>([]);
+
+  useEffect(() => {
+    import('../utils/api').then(({ apiRequest }) => {
+      apiRequest('/companies').then((res) => {
+        if (res.success && res.companies) setLiveCompanies(res.companies);
+      }).catch(() => {});
+    });
+  }, []);
+
+  const displayCompanies = liveCompanies.length > 0 ? liveCompanies : companies;
+
   return (
     <GlassCard className="lg:col-span-3">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="font-display text-lg font-semibold">Recommended Companies</h3>
-          <p className="text-xs text-soft">Based on your profile & goals</p>
+          <p className="text-xs text-soft">Live companies hiring from Adzuna API</p>
         </div>
         <Link to="/companies" className="text-sm font-semibold text-primary">Explore</Link>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
-        {companies.map((c) => (
+        {displayCompanies.map((c) => (
           <Link key={c.id} to={`/companies/${c.id}`} className="group min-w-[200px] shrink-0">
             <motion.div whileHover={{ y: -6 }} className="rounded-2xl border border-base bg-soft/40 p-4 transition-all hover:border-primary/40 hover:shadow-glow">
               <div className="flex items-center justify-between">
-                <img src={c.logo} alt={c.name} className="h-12 w-12 rounded-xl object-cover" />
+                <img
+                  src={getMediaUrl(c.logo)}
+                  alt={c.name}
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                  }}
+                  className="h-12 w-12 rounded-xl object-cover"
+                />
                 {c.hiring && <Badge variant="success"><span className="h-1.5 w-1.5 rounded-full bg-success" /> Hiring</Badge>}
               </div>
               <h4 className="mt-3 font-semibold">{c.name}</h4>
               <p className="text-xs text-soft">{c.industry}</p>
               <div className="mt-2 flex items-center justify-between text-xs">
-                <span className="text-soft">{c.openRoles} roles</span>
+                <span className="text-soft">{c.openRoles || 1} roles</span>
                 <span className="font-semibold text-primary">{c.salary}</span>
               </div>
             </motion.div>

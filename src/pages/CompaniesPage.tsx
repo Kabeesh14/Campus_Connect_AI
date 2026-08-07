@@ -6,22 +6,46 @@ import {
   CheckCircle2, Building2, ArrowRight, ArrowLeft, Zap, Award,
 } from 'lucide-react';
 import { GlassCard, Reveal, Badge, GradientButton, GhostButton } from '../components/ui';
-import { companies } from '../data/mockData';
-import { cn } from '../utils/cn';
+import { useEffect } from 'react';
+import { apiRequest, getImageUrl } from '../utils/api';
+import type { Company } from '../types';
 
 export function CompaniesPage() {
+  const [companiesList, setCompaniesList] = useState<Company[]>([]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'hiring' | 'saved'>('all');
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [industry, setIndustry] = useState('all');
-  const industries = ['all', ...Array.from(new Set(companies.map((c) => c.industry)))];
+  const [loading, setLoading] = useState(true);
 
-  const filtered = useMemo(() => companies.filter((c) => {
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      setLoading(true);
+      try {
+        const res = await apiRequest('/companies');
+        if (res.success && res.companies) {
+          setCompaniesList(res.companies);
+        } else {
+          setCompaniesList(mockCompanies);
+        }
+      } catch {
+        setCompaniesList(mockCompanies);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCompanies();
+  }, []);
+
+  const industries = ['all', ...Array.from(new Set(companiesList.map((c) => c.industry).filter(Boolean)))];
+
+  const filtered = useMemo(() => companiesList.filter((c) => {
     const mq = c.name.toLowerCase().includes(query.toLowerCase()) || c.industry.toLowerCase().includes(query.toLowerCase());
     const mi = industry === 'all' || c.industry === industry;
     const mf = filter === 'all' || (filter === 'hiring' && c.hiring) || (filter === 'saved' && saved.has(c.id));
     return mq && mi && mf;
-  }), [query, filter, industry, saved]);
+  }), [companiesList, query, filter, industry, saved]);
 
   const toggleSave = (id: string) => setSaved((prev) => {
     const n = new Set(prev);
@@ -34,7 +58,7 @@ export function CompaniesPage() {
       <Reveal>
         <div>
           <h1 className="font-display text-2xl font-bold sm:text-3xl">Company Explorer</h1>
-          <p className="mt-1 text-soft">Discover hiring companies matched to your profile.</p>
+          <p className="mt-1 text-soft">Discover hiring companies generated dynamically from live Adzuna jobs.</p>
         </div>
       </Reveal>
 
@@ -42,7 +66,7 @@ export function CompaniesPage() {
         <GlassCard className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-soft" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search companies..."
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search live companies..."
               className="w-full rounded-xl border border-base bg-soft/40 py-3 pl-12 pr-4 text-sm outline-none focus:border-primary" />
           </div>
           <div className="flex gap-2">
@@ -64,51 +88,62 @@ export function CompaniesPage() {
         </div>
       </Reveal>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((c, i) => (
-          <Reveal key={c.id} delay={i * 0.06}>
-            <GlassCard hover className="group h-full">
-              <div className="flex items-start justify-between">
-                <img src={c.logo} alt={c.name} className="h-14 w-14 rounded-2xl object-cover ring-2 ring-primary/15" />
-                <button onClick={() => toggleSave(c.id)} className="rounded-lg p-2 text-soft transition-colors hover:bg-soft">
-                  <Heart size={18} className={saved.has(c.id) ? 'fill-danger text-danger' : ''} />
-                </button>
-              </div>
-              <h3 className="mt-4 font-display text-lg font-semibold">{c.name}</h3>
-              <div className="mt-1 flex items-center gap-2 text-sm text-soft"><Building2 size={14} /> {c.industry}</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {c.hiring && <Badge variant="success"><span className="h-1.5 w-1.5 rounded-full bg-success" /> Hiring</Badge>}
-                <Badge variant="accent">{c.openRoles} open roles</Badge>
-                <Badge variant="warning"><Clock size={12} /> {c.deadlineDays}d left</Badge>
-              </div>
-              <div className="mt-4 space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-soft"><DollarSign size={15} /> Salary</span>
-                  <span className="font-semibold">{c.salary}</span>
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <span className="text-soft">Loading live hiring companies...</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((c, i) => (
+            <Reveal key={c.id} delay={i * 0.05}>
+              <GlassCard hover className="group h-full flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between">
+                    <img
+                      src={getImageUrl(c.logo)}
+                      alt={c.name}
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                      }}
+                      className="h-14 w-14 rounded-2xl object-cover ring-2 ring-primary/15"
+                    />
+                    <button onClick={() => toggleSave(c.id)} className="rounded-lg p-2 text-soft transition-colors hover:bg-soft">
+                      <Heart size={18} className={saved.has(c.id) ? 'fill-danger text-danger' : ''} />
+                    </button>
+                  </div>
+                  <h3 className="mt-4 font-display text-lg font-semibold">{c.name}</h3>
+                  <div className="mt-1 flex items-center gap-2 text-sm text-soft"><Building2 size={14} /> {c.industry}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {c.hiring && <Badge variant="success"><span className="h-1.5 w-1.5 rounded-full bg-success" /> Hiring</Badge>}
+                    <Badge variant="accent">{c.openRoles} open role{c.openRoles > 1 ? 's' : ''}</Badge>
+                    <Badge variant="warning"><Clock size={12} /> {c.deadlineDays || 14}d left</Badge>
+                  </div>
+                  <div className="mt-4 space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-soft"><DollarSign size={15} /> Package</span>
+                      <span className="font-semibold">{c.salary}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-soft"><MapPin size={15} /> Location</span>
+                      <span className="font-semibold">{c.location}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-soft"><MapPin size={15} /> Location</span>
-                  <span className="font-semibold">{c.location}</span>
+                <div className="mt-4 flex items-center justify-between border-t border-base pt-4">
+                  <div className="flex items-center gap-1">
+                    <Star size={15} className="fill-warning text-warning" />
+                    <span className="text-sm font-semibold">{c.rating || 4.5}</span>
+                  </div>
+                  <Link to={`/companies/${c.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
+                    Details <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
+                  </Link>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-soft"><Award size={15} /> Eligibility</span>
-                  <span className="font-semibold">{c.eligibility}</span>
-                </div>
-              </div>
-              <div className="mt-4 flex items-center justify-between border-t border-base pt-4">
-                <div className="flex items-center gap-1">
-                  <Star size={15} className="fill-warning text-warning" />
-                  <span className="text-sm font-semibold">{c.rating}</span>
-                </div>
-                <Link to={`/companies/${c.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
-                  Details <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
-                </Link>
-              </div>
-            </GlassCard>
-          </Reveal>
-        ))}
-      </div>
-      {filtered.length === 0 && (
+              </GlassCard>
+            </Reveal>
+          ))}
+        </div>
+      )}
+      {!loading && filtered.length === 0 && (
         <div className="py-20 text-center">
           <Building2 size={48} className="mx-auto text-soft/40" />
           <p className="mt-4 text-soft">No companies match your filters.</p>

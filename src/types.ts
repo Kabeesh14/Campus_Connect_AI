@@ -53,6 +53,14 @@ export interface Job {
   postedDays: number;
   deadline: string;
   description: string;
+  redirectUrl?: string;
+  title?: string;
+  category?: string;
+  contractType?: string;
+  salaryMin?: number;
+  salaryMax?: number;
+  country?: string;
+  defaultLogo?: string;
 }
 
 export interface Application {
