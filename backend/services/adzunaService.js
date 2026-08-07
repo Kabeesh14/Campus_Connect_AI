@@ -123,14 +123,15 @@ function formatAdzunaJob(raw, idx = 0) {
 
   const finalRequirements = matchedReqs.length > 0 ? matchedReqs : [
     `Demonstrated proficiency in ${finalSkills.join(', ')}`,
-    `Relevant educational background or technical experience in ${categoryName}`,
-    'Strong analytical, problem-solving, and communication skills',
+    `Relevant educational background or professional experience in ${categoryName} for ${title}`,
+    `Location readiness or remote availability for ${locationName}`,
+    'Strong analytical, problem-solving, and team communication skills',
   ];
 
   const finalResponsibilities = matchedResps.length > 0 ? matchedResps : [
-    `Deliver high-quality outcomes for ${title} responsibilities`,
-    'Collaborate effectively with product, engineering, and operation teams',
-    'Continuous optimization and maintenance of project deliverables',
+    `Execute core engineering and technical goals for ${title} at ${companyName}`,
+    `Maintain scalable systems and service quality within ${categoryName}`,
+    `Collaborate with cross-functional product and operations teams in ${locationName}`,
   ];
 
   // Dynamic AI Match Score
