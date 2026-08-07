@@ -1,4 +1,4 @@
-const { fetchAdzunaJobs, getCompanyDomain } = require('../services/adzunaService');
+const { fetchAdzunaJobs, getCompanyDomain, getJobByIdFromStore } = require('../services/adzunaService');
 
 /**
  * Get All Live Jobs (with optional search, location, category, contractType, minMatch)
@@ -96,8 +96,7 @@ const searchJobs = async (req, res, next) => {
 const getJobById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const allJobs = await fetchAdzunaJobs({ what: '', where: '' });
-    const job = allJobs.find((j) => String(j.id) === String(id)) || allJobs[0];
+    const job = await getJobByIdFromStore(id);
 
     if (!job) {
       return res.status(404).json({ success: false, message: 'Job not found' });

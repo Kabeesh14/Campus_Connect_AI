@@ -214,7 +214,10 @@ export function JobsPage() {
 export function JobDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [job, setJob] = useState<Job | null>(() => mockJobs.find((j) => j.id === id) || null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [relatedJobs, setRelatedJobs] = useState<Job[]>([]);
   const [bookmarked, setBookmarked] = useState(false);
   const [applied, setApplied] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -222,12 +225,40 @@ export function JobDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    apiRequest(`/jobs/${id}`).then((res) => {
-      if (res.success && res.job) setJob(res.job);
-    }).catch(() => {});
+    setLoading(true);
+    setFetchError(null);
+    apiRequest(`/jobs/${id}`)
+      .then((res) => {
+        if (res.success && res.job) {
+          setJob(res.job);
+        } else {
+          setJob(null);
+          setFetchError(res.message || 'Job not found');
+        }
+      })
+      .catch((err: unknown) => {
+        setJob(null);
+        setFetchError((err as Error).message || 'Job not found');
+      })
+      .finally(() => setLoading(false));
   }, [id]);
 
-  const company = companies.find((c) => c.id === job?.companyId);
+  useEffect(() => {
+    if (!job) return;
+    const fetchRelated = async () => {
+      try {
+        const queryTerm = job.category || job.company || 'developer';
+        const res = await apiRequest(`/jobs?search=${encodeURIComponent(queryTerm)}`);
+        if (res.success && res.jobs) {
+          const filtered = res.jobs.filter((rj: Job) => String(rj.id) !== String(job.id)).slice(0, 3);
+          setRelatedJobs(filtered);
+        }
+      } catch {
+        // Fail-safe
+      }
+    };
+    fetchRelated();
+  }, [job]);
 
   const handleApply = async () => {
     if (!id || applied || applying) return;
@@ -247,14 +278,44 @@ export function JobDetailPage() {
       if ((err as Error).message?.toLowerCase().includes('already applied')) {
         setApplied(true);
       } else {
-        setErrorMsg((err as Error).message || 'An error occurred while submitting your application. Please try again.');
+        setErrorMsg((err as Error).message || 'An error occurred while submitting your application.');
       }
     } finally {
       setApplying(false);
     }
   };
 
-  if (!job) return <div className="py-20 text-center"><p className="text-soft">Job not found.</p><Link to="/jobs" className="mt-4 inline-block font-semibold text-primary">Back to jobs</Link></div>;
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24">
+        <Loader2 size={36} className="animate-spin text-primary" />
+        <p className="mt-3 text-sm text-soft">Loading job details...</p>
+      </div>
+    );
+  }
+
+  if (!job || fetchError) {
+    return (
+      <div className="py-20 text-center">
+        <h2 className="font-display text-2xl font-bold">Job not found</h2>
+        <p className="mt-2 text-sm text-soft">The job position you are looking for does not exist or has expired.</p>
+        <Link to="/jobs" className="mt-4 inline-block font-semibold text-primary">Back to jobs</Link>
+      </div>
+    );
+  }
+
+  const requirementsList = Array.isArray(job.requirements) && job.requirements.length > 0 ? job.requirements : [
+    `Proficiency in ${(job.skills || []).slice(0, 2).join(' and ') || 'relevant tech stack'}`,
+    'Strong analytical and problem-solving skills',
+    'Experience working with modern web or cloud APIs',
+    'Good verbal and written communication skills',
+  ];
+
+  const responsibilitiesList = Array.isArray(job.responsibilities) && job.responsibilities.length > 0 ? job.responsibilities : [
+    'Design, implement, and maintain core software features',
+    'Collaborate closely with product managers and engineering teammates',
+    'Perform code reviews, testing, and continuous deployment',
+  ];
 
   return (
     <div className="space-y-6">
@@ -280,18 +341,19 @@ export function JobDetailPage() {
                 />
                 <div className="flex-1">
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="success"><Brain size={12} /> {job.match}% AI Match</Badge>
-                    <Badge variant="primary">{job.type}</Badge>
+                    <Badge variant="success"><Brain size={12} /> {job.match || 88}% AI Match</Badge>
+                    <Badge variant="primary">{job.type || job.contractType || 'Full Time'}</Badge>
                     {job.remote && <Badge variant="accent">Remote</Badge>}
+                    {job.category && <Badge variant="neutral">{job.category}</Badge>}
                   </div>
-                  <h1 className="mt-3 font-display text-2xl font-bold">{job.role}</h1>
-                  <Link to={`/companies/${job.companyId}`} className="text-sm font-semibold text-primary">{job.company}</Link>
+                  <h1 className="mt-3 font-display text-2xl font-bold">{job.role || job.title}</h1>
+                  <p className="text-sm font-semibold text-primary">{job.company}</p>
                 </div>
                 <button onClick={() => setBookmarked(!bookmarked)} className="rounded-xl border border-base bg-soft/40 p-3 transition-all hover:bg-soft">
                   <Bookmark size={20} className={bookmarked ? 'fill-primary text-primary' : 'text-soft'} />
                 </button>
               </div>
-              <p className="relative mt-4 text-sm text-soft">{job.description}</p>
+              <p className="relative mt-4 text-sm leading-relaxed text-soft">{job.description}</p>
             </GlassCard>
           </Reveal>
 
@@ -299,8 +361,8 @@ export function JobDetailPage() {
             <GlassCard>
               <h3 className="font-display text-lg font-semibold">Requirements</h3>
               <div className="mt-4 space-y-2.5">
-                {job.requirements.map((r) => (
-                  <div key={r} className="flex items-start gap-3">
+                {requirementsList.map((r, idx) => (
+                  <div key={idx} className="flex items-start gap-3">
                     <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-primary" /><span className="text-sm">{r}</span>
                   </div>
                 ))}
@@ -312,8 +374,8 @@ export function JobDetailPage() {
             <GlassCard>
               <h3 className="font-display text-lg font-semibold">Responsibilities</h3>
               <div className="mt-4 space-y-2.5">
-                {job.responsibilities.map((r) => (
-                  <div key={r} className="flex items-start gap-3">
+                {responsibilitiesList.map((r, idx) => (
+                  <div key={idx} className="flex items-start gap-3">
                     <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-to-r from-primary to-secondary" /><span className="text-sm">{r}</span>
                   </div>
                 ))}
@@ -325,12 +387,41 @@ export function JobDetailPage() {
             <GlassCard>
               <h3 className="font-display text-lg font-semibold">Required Skills</h3>
               <div className="mt-4 flex flex-wrap gap-2">
-                {job.skills.map((s) => (
+                {(job.skills || []).map((s) => (
                   <span key={s} className="rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-sm font-semibold text-primary">{s}</span>
                 ))}
               </div>
             </GlassCard>
           </Reveal>
+
+          {relatedJobs.length > 0 && (
+            <Reveal delay={0.25}>
+              <GlassCard>
+                <h3 className="font-display text-lg font-semibold">Related Live Jobs</h3>
+                <div className="mt-4 space-y-3">
+                  {relatedJobs.map((rj) => (
+                    <Link key={rj.id} to={`/jobs/${rj.id}`} className="block">
+                      <div className="group flex items-center justify-between rounded-xl border border-base bg-soft/40 p-3 transition-all hover:border-primary/40 hover:bg-soft">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={getImageUrl(rj.logo)}
+                            alt={rj.company}
+                            onError={(e) => { e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200'; }}
+                            className="h-10 w-10 rounded-xl object-cover"
+                          />
+                          <div>
+                            <p className="font-semibold text-sm">{rj.role || rj.title}</p>
+                            <p className="text-xs text-soft">{rj.company} • {rj.location}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-semibold text-primary group-hover:translate-x-1 transition-transform">Details →</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </GlassCard>
+            </Reveal>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -339,12 +430,12 @@ export function JobDetailPage() {
               <h3 className="font-display text-lg font-semibold">Job Overview</h3>
               <div className="mt-4 space-y-3">
                 {[
-                  { icon: DollarSign, label: 'Package', value: job.package },
+                  { icon: DollarSign, label: 'Package', value: job.package || job.salary || 'Competitive Salary' },
                   { icon: MapPin, label: 'Location', value: job.location },
-                  { icon: Briefcase, label: 'Type', value: job.type },
-                  { icon: Building2, label: 'Eligibility', value: job.eligibility },
-                  { icon: Calendar, label: 'Deadline', value: job.deadline },
-                  { icon: Clock, label: 'Posted', value: `${job.postedDays} days ago` },
+                  { icon: Briefcase, label: 'Type', value: job.type || job.contractType || 'Full Time' },
+                  { icon: Building2, label: 'Eligibility', value: job.eligibility || 'Degree in CS / Engineering' },
+                  { icon: Calendar, label: 'Deadline', value: job.deadline || 'Apply Soon' },
+                  { icon: Clock, label: 'Posted', value: job.postedDays ? `${job.postedDays} days ago` : 'Recently' },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between border-b border-base pb-3">
                     <span className="flex items-center gap-2 text-sm text-soft"><row.icon size={16} /> {row.label}</span>
@@ -376,37 +467,15 @@ export function JobDetailPage() {
               <div className="relative">
                 <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Brain size={18} /> AI Match Analysis</div>
                 <div className="mt-4 flex items-center gap-4">
-                  <div className="font-display text-4xl font-bold gradient-text">{job.match}%</div>
+                  <div className="font-display text-4xl font-bold gradient-text">{job.match || 88}%</div>
                   <div className="flex-1">
-                    <ProgressBar value={job.match} color={job.match >= 85 ? 'success' : 'primary'} />
-                    <p className="mt-2 text-xs text-soft">{job.match >= 85 ? 'Excellent match — high success probability' : job.match >= 70 ? 'Good match — consider applying' : 'Moderate match — build skills first'}</p>
+                    <ProgressBar value={job.match || 88} color={(job.match || 88) >= 85 ? 'success' : 'primary'} />
+                    <p className="mt-2 text-xs text-soft">{(job.match || 88) >= 85 ? 'Excellent match — high success probability' : 'Good match — consider applying'}</p>
                   </div>
                 </div>
               </div>
             </GlassCard>
           </Reveal>
-
-          {company && (
-            <Reveal delay={0.2}>
-              <Link to={`/companies/${company.id}`}>
-                <GlassCard hover>
-                  <h3 className="font-display text-sm font-semibold text-soft">About the company</h3>
-                  <div className="mt-3 flex items-center gap-3">
-                    <img src={company.logo} alt={company.name} className="h-12 w-12 rounded-xl object-cover" />
-                    <div>
-                      <p className="font-semibold">{company.name}</p>
-                      <p className="text-xs text-soft">{company.industry} • {company.location}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center gap-1">
-                    <Star size={14} className="fill-warning text-warning" />
-                    <span className="text-sm font-semibold">{company.rating}</span>
-                    <span className="ml-auto text-sm font-semibold text-primary">View profile →</span>
-                  </div>
-                </GlassCard>
-              </Link>
-            </Reveal>
-          )}
         </div>
       </div>
     </div>

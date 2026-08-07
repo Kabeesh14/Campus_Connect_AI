@@ -179,6 +179,7 @@ async function fetchAdzunaJobs({ what = 'software developer', where = 'India', c
           const parsed = JSON.parse(body);
           if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
             const formatted = parsed.results.map((item, idx) => formatAdzunaJob(item, idx));
+            saveJobsToStore(formatted);
             cacheMap.set(cacheKey, { timestamp: Date.now(), data: formatted });
             console.log(`[ADZUNA SERVICE SUCCESS] Fetched & formatted ${formatted.length} live jobs from Adzuna API.`);
             return resolve(formatted);
@@ -206,6 +207,37 @@ async function fetchAdzunaJobs({ what = 'software developer', where = 'India', c
       return resolve(getFallbackLiveJobs(what, where));
     });
   });
+}
+
+const globalJobStore = new Map();
+
+function saveJobsToStore(jobsList) {
+  if (Array.isArray(jobsList)) {
+    jobsList.forEach((j) => {
+      if (j && j.id) {
+        globalJobStore.set(String(j.id), j);
+      }
+    });
+  }
+}
+
+async function getJobByIdFromStore(id) {
+  if (!id) return null;
+  const strId = String(id);
+  if (globalJobStore.has(strId)) {
+    return globalJobStore.get(strId);
+  }
+  const fresh = await fetchAdzunaJobs({ what: 'software developer', resultsPerPage: 50 });
+  saveJobsToStore(fresh);
+  if (globalJobStore.has(strId)) {
+    return globalJobStore.get(strId);
+  }
+  const fallbacks = await fetchAdzunaJobs({ what: '', resultsPerPage: 50 });
+  saveJobsToStore(fallbacks);
+  if (globalJobStore.has(strId)) {
+    return globalJobStore.get(strId);
+  }
+  return null;
 }
 
 /**
@@ -383,6 +415,8 @@ function getFallbackLiveJobs(what = '', where = '') {
     },
   ];
 
+  saveJobsToStore(baseLiveJobs);
+
   if (!what && !where) return baseLiveJobs;
 
   const filtered = baseLiveJobs.filter((j) => {
@@ -401,4 +435,5 @@ module.exports = {
   fetchAdzunaJobs,
   formatAdzunaJob,
   getCompanyDomain,
+  getJobByIdFromStore,
 };
