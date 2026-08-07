@@ -385,13 +385,16 @@ function getFallbackLiveJobs(what = '', where = '') {
 
   if (!what && !where) return baseLiveJobs;
 
-  return baseLiveJobs.filter((j) => {
-    const q = what.toLowerCase();
-    const loc = where.toLowerCase();
-    const matchQuery = !q || j.title.toLowerCase().includes(q) || j.company.toLowerCase().includes(q) || j.skills.some((s) => s.toLowerCase().includes(q));
+  const filtered = baseLiveJobs.filter((j) => {
+    const q = what.toLowerCase().trim();
+    const words = q.split(/\s+/).filter(Boolean);
+    const loc = where.toLowerCase().trim();
+    const matchQuery = !q || words.some((w) => j.title.toLowerCase().includes(w) || j.company.toLowerCase().includes(w) || j.skills.some((s) => s.toLowerCase().includes(w)));
     const matchLoc = !loc || j.location.toLowerCase().includes(loc);
     return matchQuery && matchLoc;
   });
+
+  return filtered.length > 0 ? filtered : baseLiveJobs;
 }
 
 module.exports = {
