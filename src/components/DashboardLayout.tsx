@@ -242,7 +242,14 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
         </div>
         <div className="relative">
           <button onClick={() => setMenuOpen(!menuOpen)} className="flex items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-soft">
-            <img src={getMediaUrl(user?.avatar)} alt={user?.name} className="h-8 w-8 rounded-full object-cover ring-2 ring-primary/20" />
+            <img
+              src={getMediaUrl(user?.avatar)}
+              alt={user?.name}
+              onError={(e) => {
+                e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+              }}
+              className="h-8 w-8 rounded-full object-cover ring-2 ring-primary/20"
+            />
             <span className="hidden text-sm font-semibold sm:block">{user?.name}</span>
           </button>
           <AnimatePresence>

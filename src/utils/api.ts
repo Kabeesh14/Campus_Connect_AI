@@ -39,8 +39,14 @@ export function getImageUrl(pathOrUrl: string | undefined | null): string {
   if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:')) {
     return clean;
   }
-  const baseUrl = API_BASE_URL.replace(/\/api$/, '');
-  return `${baseUrl}${clean.startsWith('/') ? '' : '/'}${clean}`;
+  const relativePath = clean.startsWith('/') ? clean : `/${clean}`;
+  let baseDomain = API_BASE_URL.replace(/\/api$/, '');
+  if (!baseDomain || baseDomain === '' || baseDomain.startsWith('/')) {
+    if (typeof window !== 'undefined' && window.location.origin) {
+      baseDomain = window.location.origin;
+    }
+  }
+  return `${baseDomain}${relativePath}`;
 }
 
 export function getMediaUrl(pathOrUrl: string | undefined | null): string {

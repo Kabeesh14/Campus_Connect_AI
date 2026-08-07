@@ -210,7 +210,14 @@ export default function ProfilePage() {
             <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/20 blur-3xl" />
             <div className="relative flex flex-col items-center text-center">
               <div className="relative">
-                <img src={getMediaUrl(avatar || user?.avatar)} alt={name} className="h-28 w-28 rounded-3xl object-cover ring-4 ring-primary/20" />
+                <img
+                  src={getMediaUrl(avatar || user?.avatar)}
+                  alt={name}
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                  }}
+                  className="h-28 w-28 rounded-3xl object-cover ring-4 ring-primary/20"
+                />
                 <button onClick={() => avatarInputRef.current?.click()} className="absolute -bottom-1 -right-1 rounded-xl bg-gradient-to-br from-primary to-secondary p-2 text-white shadow-glow transition-transform hover:scale-105">
                   <Upload size={16} />
                 </button>
