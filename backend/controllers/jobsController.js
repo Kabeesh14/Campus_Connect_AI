@@ -198,10 +198,69 @@ const getCompanies = async (req, res, next) => {
   }
 };
 
+/**
+ * Get Saved Jobs for User
+ */
+const getSavedJobs = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { query } = require('../config/db');
+    const rows = await query('SELECT * FROM saved_jobs WHERE user_id = ? ORDER BY created_at DESC', [userId]);
+    const savedJobs = rows.map((r) => {
+      try {
+        return typeof r.job_data === 'string' ? JSON.parse(r.job_data) : r.job_data;
+      } catch {
+        return { id: r.job_id };
+      }
+    });
+    return res.status(200).json({ success: true, savedJobs });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Save Job for User
+ */
+const saveJob = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { jobId, job } = req.body;
+    if (!jobId) {
+      return res.status(400).json({ success: false, message: 'jobId is required' });
+    }
+    const { query } = require('../config/db');
+    const id = `sj-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const jobDataStr = JSON.stringify(job || { id: jobId });
+    await query('INSERT INTO saved_jobs (id, user_id, job_id, job_data) VALUES (?, ?, ?, ?)', [id, userId, String(jobId), jobDataStr]);
+    return res.status(200).json({ success: true, message: 'Job saved successfully', jobId });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Remove Saved Job for User
+ */
+const removeSavedJob = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { query } = require('../config/db');
+    await query('DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?', [userId, String(id)]);
+    return res.status(200).json({ success: true, message: 'Saved job removed', jobId: id });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getJobs,
   searchJobs,
   getJobById,
   getCompanyJobs,
   getCompanies,
+  getSavedJobs,
+  saveJob,
+  removeSavedJob,
 };

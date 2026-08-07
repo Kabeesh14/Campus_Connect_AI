@@ -192,6 +192,11 @@ const query = async (sql, params = []) => {
       return inMemoryDb.placement_officers || [];
     }
 
+    if (sql.includes('FROM saved_jobs')) {
+      const userId = params[0];
+      return (inMemoryDb.saved_jobs || []).filter((sj) => sj.user_id === userId);
+    }
+
     if (sql.includes('FROM companies')) {
       if (sql.includes('WHERE id = ?')) {
         return (inMemoryDb.companies || []).filter((c) => c.id === params[0]);
@@ -336,6 +341,24 @@ const query = async (sql, params = []) => {
   if (cleanSql.startsWith('INSERT INTO CERTIFICATIONS')) {
     if (!inMemoryDb.certifications) inMemoryDb.certifications = [];
     inMemoryDb.certifications.push({ id: params[0], student_id: params[1], name: params[2], issuer: params[3], year: params[4] });
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
+  if (cleanSql.startsWith('INSERT INTO SAVED_JOBS')) {
+    const newItem = { id: params[0], user_id: params[1], job_id: params[2], job_data: typeof params[3] === 'string' ? params[3] : JSON.stringify(params[3] || {}), created_at: new Date().toISOString() };
+    if (!inMemoryDb.saved_jobs) inMemoryDb.saved_jobs = [];
+    inMemoryDb.saved_jobs = inMemoryDb.saved_jobs.filter((sj) => !(sj.user_id === params[1] && sj.job_id === params[2]));
+    inMemoryDb.saved_jobs.push(newItem);
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
+  if (cleanSql.startsWith('DELETE FROM SAVED_JOBS')) {
+    const userId = params[0];
+    const jobId = params[1];
+    if (!inMemoryDb.saved_jobs) inMemoryDb.saved_jobs = [];
+    inMemoryDb.saved_jobs = inMemoryDb.saved_jobs.filter((sj) => !(sj.user_id === userId && sj.job_id === jobId));
     saveLocalDb();
     return { affectedRows: 1 };
   }

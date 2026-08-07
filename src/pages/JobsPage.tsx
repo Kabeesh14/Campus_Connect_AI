@@ -4,14 +4,12 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   Search, MapPin, DollarSign, Clock, Bookmark, Zap, ArrowRight, ArrowLeft,
   Brain, CheckCircle2, Briefcase, Building2, Calendar, Star, Loader2, AlertCircle,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { GlassCard, Reveal, Badge, GradientButton, GhostButton, ProgressBar } from '../components/ui';
-import { jobs as mockJobs, companies } from '../data/mockData';
-import { apiRequest } from '../utils/api';
+import { apiRequest, getImageUrl } from '../utils/api';
 import { cn } from '../utils/cn';
 import type { Job } from '../types';
-
-import { getImageUrl } from '../utils/api';
 
 export function JobsPage() {
   const [jobsList, setJobsList] = useState<Job[]>([]);
@@ -23,6 +21,18 @@ export function JobsPage() {
   const [minMatch, setMinMatch] = useState(0);
   const [contractType, setContractType] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    apiRequest('/jobs/saved')
+      .then((res) => {
+        if (res.success && Array.isArray(res.savedJobs)) {
+          const ids = res.savedJobs.map((j: { id: string }) => String(j.id));
+          setSaved(new Set(ids));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -36,13 +46,13 @@ export function JobsPage() {
         params.append('sortBy', sortBy);
 
         const res = await apiRequest(`/jobs?${params.toString()}`);
-        if (res.success && res.jobs) {
+        if (res.success && Array.isArray(res.jobs)) {
           setJobsList(res.jobs);
         } else {
-          setJobsList(mockJobs);
+          setJobsList([]);
         }
       } catch {
-        setJobsList(mockJobs);
+        setJobsList([]);
       } finally {
         setLoading(false);
       }
@@ -58,17 +68,40 @@ export function JobsPage() {
       const q = query.toLowerCase();
       const mq = !q || (j.role || j.title || '').toLowerCase().includes(q) || j.company.toLowerCase().includes(q) || (j.category || '').toLowerCase().includes(q);
       const ml = location === 'all' || j.location === location;
-      const mm = (j.match || 80) >= minMatch;
+      const mm = (j.match || 75) >= minMatch;
       const mc = contractType === 'all' || (j.contractType || j.type || '').toLowerCase().includes(contractType.toLowerCase());
       return mq && ml && mm && mc;
     })
     .sort((a, b) => sortBy === 'match' ? (b.match || 0) - (a.match || 0) : (a.postedDays || 0) - (b.postedDays || 0)), [jobsList, query, location, minMatch, sortBy, contractType]);
 
-  const toggleSave = (id: string) => setSaved((p) => {
-    const n = new Set(p);
-    if (n.has(id)) { n.delete(id); } else { n.add(id); }
-    return n;
-  });
+  const itemsPerPage = 8;
+  const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
+  const paginatedJobs = useMemo(() => {
+    const start = (page - 1) * itemsPerPage;
+    return filtered.slice(start, start + itemsPerPage);
+  }, [filtered, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, location, minMatch, contractType, sortBy]);
+
+  const toggleSave = async (job: Job) => {
+    const isSaved = saved.has(job.id);
+    setSaved((prev) => {
+      const next = new Set(prev);
+      if (isSaved) next.delete(job.id); else next.add(job.id);
+      return next;
+    });
+    try {
+      if (isSaved) {
+        await apiRequest(`/jobs/save/${job.id}`, { method: 'DELETE' });
+      } else {
+        await apiRequest('/jobs/save', { method: 'POST', body: JSON.stringify({ jobId: job.id, job }) });
+      }
+    } catch {
+      // Fail-safe
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -83,7 +116,7 @@ export function JobsPage() {
         <GlassCard className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-soft" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search live roles, skills, companies..."
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search live roles, skills (Data Analyst, Python, Java)..."
               className="w-full rounded-xl border border-base bg-soft/40 py-3 pl-12 pr-4 text-sm outline-none focus:border-primary" />
           </div>
           <div className="flex gap-2">
@@ -138,73 +171,109 @@ export function JobsPage() {
       </AnimatePresence>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={32} className="animate-spin text-primary" />
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 size={36} className="animate-spin text-primary" />
+          <p className="mt-3 text-sm text-soft">Fetching live Adzuna jobs...</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="py-20 text-center">
+          <AlertCircle size={40} className="mx-auto text-soft" />
+          <h3 className="mt-3 font-display text-xl font-bold">No jobs found</h3>
+          <p className="mt-1 text-sm text-soft">Try adjusting your search criteria or resetting filters.</p>
+          <button onClick={() => { setQuery(''); setLocation('all'); setMinMatch(0); setContractType('all'); }}
+            className="mt-4 rounded-xl bg-primary/10 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20">
+            Reset Filters
+          </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {filtered.map((j, i) => (
-            <Reveal key={j.id} delay={i * 0.05}>
-              <GlassCard hover className="group h-full flex flex-col justify-between">
-                <div>
-                  <div className="flex items-start gap-4">
-                    <img
-                      src={getImageUrl(j.logo)}
-                      alt={j.company}
-                      onError={(e) => {
-                        e.currentTarget.src = j.defaultLogo || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
-                      }}
-                      className="h-12 w-12 rounded-2xl object-cover ring-2 ring-primary/15"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-display text-lg font-semibold">{j.role || j.title}</h3>
-                      <p className="text-sm text-soft">{j.company} • {j.location}</p>
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            {paginatedJobs.map((j, i) => (
+              <Reveal key={j.id} delay={i * 0.04}>
+                <GlassCard hover className="group h-full flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start gap-4">
+                      <img
+                        src={getImageUrl(j.logo)}
+                        alt={j.company}
+                        onError={(e) => {
+                          const initials = (j.company || 'CO').split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                          e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
+                        }}
+                        className="h-12 w-12 rounded-2xl object-cover ring-2 ring-primary/15"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-display text-lg font-semibold">{j.role || j.title}</h3>
+                        <p className="text-sm text-soft">{j.company} • {j.location}</p>
+                      </div>
+                      <button onClick={() => toggleSave(j)} className="rounded-lg p-2 text-soft transition-colors hover:bg-soft">
+                        <Bookmark size={18} className={saved.has(j.id) ? 'fill-primary text-primary' : ''} />
+                      </button>
                     </div>
-                    <button onClick={() => toggleSave(j.id)} className="rounded-lg p-2 text-soft transition-colors hover:bg-soft">
-                      <Bookmark size={18} className={saved.has(j.id) ? 'fill-primary text-primary' : ''} />
-                    </button>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Badge variant="success"><Brain size={12} /> {j.match}% match</Badge>
-                    <Badge variant="primary">{j.type || 'Full Time'}</Badge>
-                    {j.remote && <Badge variant="accent">Remote</Badge>}
-                    {j.category && <Badge variant="neutral">{j.category}</Badge>}
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-xl border border-base bg-soft/40 p-3">
-                      <p className="text-xs text-soft">Package / Salary</p><p className="font-semibold">{j.package || j.salary}</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Badge variant="success"><Brain size={12} /> {j.match || 80}% match</Badge>
+                      <Badge variant="primary">{j.type || 'Full Time'}</Badge>
+                      {j.remote && <Badge variant="accent">Remote</Badge>}
+                      {j.category && <Badge variant="neutral">{j.category}</Badge>}
                     </div>
-                    <div className="rounded-xl border border-base bg-soft/40 p-3">
-                      <p className="text-xs text-soft">Deadline</p><p className="font-semibold">{j.deadline}</p>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-xl border border-base bg-soft/40 p-3">
+                        <p className="text-xs text-soft">Salary</p><p className="font-semibold">{j.package || j.salary || 'Salary Not Disclosed'}</p>
+                      </div>
+                      <div className="rounded-xl border border-base bg-soft/40 p-3">
+                        <p className="text-xs text-soft">Posted</p><p className="font-semibold">{j.postedDays ? `${j.postedDays}d ago` : 'Recently'}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {(j.skills || []).slice(0, 5).map((s) => (
+                        <span key={s} className="rounded-lg bg-soft px-2.5 py-1 text-xs font-medium text-soft">{s}</span>
+                      ))}
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {(j.skills || []).slice(0, 4).map((s) => (
-                      <span key={s} className="rounded-lg bg-soft px-2.5 py-1 text-xs font-medium text-soft">{s}</span>
-                    ))}
+                  <div className="mt-4 flex items-center justify-between border-t border-base pt-4">
+                    <span className="text-xs text-soft">Adzuna Verified</span>
+                    <div className="flex gap-2">
+                      {j.redirectUrl && (
+                        <a
+                          href={j.redirectUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold rounded-lg bg-primary/10 px-3 py-1.5 text-primary hover:bg-primary/20"
+                        >
+                          Apply <Zap size={12} />
+                        </a>
+                      )}
+                      <Link to={`/jobs/${j.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
+                        Details <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
+                      </Link>
+                    </div>
                   </div>
-                </div>
-                <div className="mt-4 flex items-center justify-between border-t border-base pt-4">
-                  <span className="text-xs text-soft">Posted {j.postedDays}d ago</span>
-                  <div className="flex gap-2">
-                    {j.redirectUrl && (
-                      <a
-                        href={j.redirectUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-semibold rounded-lg bg-primary/10 px-3 py-1.5 text-primary hover:bg-primary/20"
-                      >
-                        Apply <Zap size={12} />
-                      </a>
-                    )}
-                    <Link to={`/jobs/${j.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
-                      Details <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
-                    </Link>
-                  </div>
-                </div>
-              </GlassCard>
-            </Reveal>
-          ))}
+                </GlassCard>
+              </Reveal>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-4">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="flex items-center gap-1 rounded-xl border border-base bg-soft/40 px-3.5 py-2 text-sm font-semibold text-soft disabled:opacity-40 hover:bg-soft"
+              >
+                <ChevronLeft size={16} /> Previous
+              </button>
+              <span className="text-sm font-semibold text-soft">
+                Page <span className="text-primary">{page}</span> of {totalPages}
+              </span>
+              <button
+                disabled={page === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="flex items-center gap-1 rounded-xl border border-base bg-soft/40 px-3.5 py-2 text-sm font-semibold text-soft disabled:opacity-40 hover:bg-soft"
+              >
+                Next <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -335,7 +404,8 @@ export function JobDetailPage() {
                   src={getImageUrl(job.logo)}
                   alt={job.company}
                   onError={(e) => {
-                    e.currentTarget.src = job.defaultLogo || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                    const initials = (job.company || 'CO').split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                    e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
                   }}
                   className="h-16 w-16 rounded-2xl object-cover ring-2 ring-primary/20"
                 />
@@ -406,7 +476,10 @@ export function JobDetailPage() {
                           <img
                             src={getImageUrl(rj.logo)}
                             alt={rj.company}
-                            onError={(e) => { e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200'; }}
+                            onError={(e) => {
+                              const initials = (rj.company || 'CO').split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                              e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
+                            }}
                             className="h-10 w-10 rounded-xl object-cover"
                           />
                           <div>

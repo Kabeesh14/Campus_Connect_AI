@@ -51,13 +51,15 @@ function formatAdzunaJob(raw, idx = 0) {
   const companyName = (raw.company && raw.company.display_name ? raw.company.display_name : 'Tech Company').trim();
   const domain = getCompanyDomain(companyName);
   const companyLogo = `https://logo.clearbit.com/${domain}`;
-  const defaultFallbackLogo = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+  
+  const initials = companyName.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'CO';
+  const svgInitialsAvatar = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
 
   const locationName = (raw.location && raw.location.display_name ? raw.location.display_name : 'Remote / Global').trim();
   const salaryMin = raw.salary_min ? Math.round(raw.salary_min) : 0;
   const salaryMax = raw.salary_max ? Math.round(raw.salary_max) : 0;
 
-  let salaryStr = 'Competitive Salary';
+  let salaryStr = 'Salary Not Disclosed';
   if (salaryMin > 0 && salaryMax > 0) {
     if (salaryMin > 50000) {
       salaryStr = `₹${(salaryMin / 100000).toFixed(1)}L - ₹${(salaryMax / 100000).toFixed(1)}L / yr`;
@@ -66,9 +68,11 @@ function formatAdzunaJob(raw, idx = 0) {
     }
   } else if (salaryMin > 0) {
     salaryStr = salaryMin > 50000 ? `₹${(salaryMin / 100000).toFixed(1)}L / yr` : `$${Math.round(salaryMin / 1000)}k / yr`;
+  } else if (salaryMax > 0) {
+    salaryStr = salaryMax > 50000 ? `Up to ₹${(salaryMax / 100000).toFixed(1)}L / yr` : `Up to $${Math.round(salaryMax / 1000)}k / yr`;
   }
 
-  const rawDesc = (raw.description || 'Full-time software engineering role working on scalable AI systems and web infrastructure.').replace(/<[^>]*>/g, '').trim();
+  const rawDesc = (raw.description || 'Software development and technical engineering position working on production services.').replace(/<[^>]*>/g, '').trim();
   const contractTypeRaw = (raw.contract_type || raw.contract_time || 'full_time').toLowerCase();
   
   let contractType = 'full_time';
@@ -89,17 +93,49 @@ function formatAdzunaJob(raw, idx = 0) {
   const redirectUrl = raw.redirect_url || 'https://www.adzuna.com';
   const createdDate = raw.created || new Date().toISOString();
 
-  // Calculate days ago
+  // Calculate posted days ago
   const createdTime = new Date(createdDate).getTime();
   const nowTime = Date.now();
   const postedDays = Math.max(1, Math.floor((nowTime - createdTime) / (1000 * 60 * 60 * 24))) || 1;
 
-  // Generate skills & requirements from title and description
-  const skillKeywords = ['React', 'TypeScript', 'Node.js', 'Python', 'Java', 'SQL', 'AWS', 'Docker', 'GraphQL', 'REST API', 'Tailwind', 'Git'];
-  const extractedSkills = skillKeywords.filter((sk) => title.toLowerCase().includes(sk.toLowerCase()) || rawDesc.toLowerCase().includes(sk.toLowerCase()));
-  const finalSkills = extractedSkills.length >= 2 ? extractedSkills : ['React', 'Node.js', 'TypeScript', 'SQL'];
+  // Extract skills dynamically
+  const skillKeywords = [
+    'SQL', 'Python', 'Power BI', 'Java', 'Spring Boot', 'AWS', 'Docker', 'React', 'Excel', 'Azure',
+    'Machine Learning', 'TensorFlow', 'PyTorch', 'Node.js', 'C++', 'C#', 'Go', 'Kubernetes', 'K8s',
+    'Pandas', 'Spark', 'Kafka', 'DevOps', 'Angular', 'Vue', 'Linux', 'Git', 'PostgreSQL', 'MySQL',
+    'MongoDB', 'Tableau', 'Flutter', 'Swift', 'Android', 'GraphQL', 'REST API', 'Microservices',
+    'Data Analytics', 'Cybersecurity', 'Jira', 'Agile', 'System Design'
+  ];
+  const extractedSkills = skillKeywords.filter((sk) =>
+    title.toLowerCase().includes(sk.toLowerCase()) || rawDesc.toLowerCase().includes(sk.toLowerCase())
+  );
+  const titleWords = title.split(/\s+/).filter((w) => w.length > 3 && !['with', 'senior', 'junior', 'lead', 'tech'].includes(w.toLowerCase()));
+  const finalSkills = extractedSkills.length > 0 ? extractedSkills : titleWords.slice(0, 4);
 
-  const matchScore = Math.floor(82 + ((idx * 3 + title.length) % 17));
+  // Dynamic Requirements & Responsibilities NLP Parser
+  const sentences = rawDesc.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => s.length > 15);
+  
+  const reqKeywords = ['experience', 'degree', 'knowledge', 'proficient', 'skilled', 'ability', 'qualification', 'bachelor', 'master', 'years', 'must', 'strong', 'familiarity', 'background'];
+  const respKeywords = ['develop', 'build', 'design', 'manage', 'maintain', 'create', 'lead', 'implement', 'support', 'optimize', 'collaborate', 'work', 'ensure', 'deliver', 'analyze', 'provide', 'drive', 'test', 'execute'];
+
+  const matchedReqs = sentences.filter((s) => reqKeywords.some((k) => s.toLowerCase().includes(k))).slice(0, 4);
+  const matchedResps = sentences.filter((s) => respKeywords.some((k) => s.toLowerCase().includes(k))).slice(0, 4);
+
+  const finalRequirements = matchedReqs.length > 0 ? matchedReqs : [
+    `Demonstrated proficiency in ${finalSkills.join(', ')}`,
+    `Relevant educational background or technical experience in ${categoryName}`,
+    'Strong analytical, problem-solving, and communication skills',
+  ];
+
+  const finalResponsibilities = matchedResps.length > 0 ? matchedResps : [
+    `Deliver high-quality outcomes for ${title} responsibilities`,
+    'Collaborate effectively with product, engineering, and operation teams',
+    'Continuous optimization and maintenance of project deliverables',
+  ];
+
+  // Dynamic AI Match Score
+  const titleHash = title.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const matchScore = Math.min(98, Math.max(74, 76 + (titleHash % 17) + (extractedSkills.length * 2)));
 
   return {
     id: String(raw.id || `adzuna-${idx + 1}-${Date.now()}`),
@@ -108,7 +144,7 @@ function formatAdzunaJob(raw, idx = 0) {
     company: companyName,
     companyLogo,
     logo: companyLogo,
-    defaultLogo: defaultFallbackLogo,
+    defaultLogo: svgInitialsAvatar,
     location: locationName,
     salaryMin,
     salaryMax,
@@ -126,18 +162,9 @@ function formatAdzunaJob(raw, idx = 0) {
     postedDays,
     deadline: `${postedDays + 14} days left`,
     skills: finalSkills,
-    requirements: [
-      `Proficiency in ${finalSkills.slice(0, 2).join(' and ')}`,
-      'Strong problem-solving and analytical skills',
-      'Experience building responsive web apps or backend APIs',
-      'Good team communication and collaboration',
-    ],
-    responsibilities: [
-      'Design, develop, and maintain web and backend services',
-      'Collaborate with cross-functional product and engineering teams',
-      'Write clean, testable, and efficient code',
-    ],
-    eligibility: 'B.Tech / M.Tech / B.Sc in CS, IT, or related fields',
+    requirements: finalRequirements,
+    responsibilities: finalResponsibilities,
+    eligibility: 'Degree in CS, IT, Engineering, or related discipline',
   };
 }
 

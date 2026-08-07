@@ -6,7 +6,8 @@ import {
   Plus, CheckCircle2, XCircle, CalendarDays, X,
 } from 'lucide-react';
 import { GlassCard, Reveal, Badge, CountUp, ProgressBar, GradientButton } from '../components/ui';
-import { adminStats, jobs as mockJobs, applications as mockApplications } from '../data/mockData';
+import { adminStats, applications as mockApplications } from '../data/mockData';
+import { type Job } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../utils/api';
 import { cn } from '../utils/cn';
@@ -122,7 +123,7 @@ export default function AdminDashboard() {
   const [statsData, setStatsData] = useState(adminStats);
 
   // Recruiter States
-  const [jobs, setJobs] = useState(mockJobs);
+  const [jobs, setJobs] = useState<Job[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [applicants, setApplicants] = useState<any[]>(mockApplications);
   const [showJobModal, setShowJobModal] = useState(false);
@@ -134,6 +135,12 @@ export default function AdminDashboard() {
     apiRequest('/analytics/placement').then((res) => {
       if (res.success && res.analytics) {
         setStatsData((prev) => ({ ...prev, ...res.analytics }));
+      }
+    }).catch(() => {});
+
+    apiRequest('/jobs').then((res) => {
+      if (res.success && Array.isArray(res.jobs)) {
+        setJobs(res.jobs);
       }
     }).catch(() => {});
   }, []);

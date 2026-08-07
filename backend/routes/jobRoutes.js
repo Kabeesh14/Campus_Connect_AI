@@ -6,6 +6,9 @@ const {
   getJobById,
   getCompanyJobs,
   getCompanies,
+  getSavedJobs,
+  saveJob,
+  removeSavedJob,
 } = require('../controllers/jobsController');
 
 const {
@@ -22,6 +25,9 @@ router.get('/search', verifyToken, searchJobs);
 router.get('/companies', verifyToken, getCompanies);
 router.get('/company/:company', verifyToken, getCompanyJobs);
 router.get('/applications', verifyToken, getUserApplications);
+router.get('/saved', verifyToken, getSavedJobs);
+router.post('/save', verifyToken, saveJob);
+router.delete('/save/:id', verifyToken, removeSavedJob);
 router.get('/:id', verifyToken, getJobById);
 router.post('/:id/apply', verifyToken, applyToJob);
 router.delete('/applications/:id', verifyToken, withdrawApplication);
