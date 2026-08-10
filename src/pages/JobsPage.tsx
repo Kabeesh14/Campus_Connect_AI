@@ -4,7 +4,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   Search, MapPin, DollarSign, Clock, Bookmark, Zap, ArrowRight, ArrowLeft,
   Brain, CheckCircle2, Briefcase, Building2, Calendar, Star, Loader2, AlertCircle,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ExternalLink, ShieldCheck,
 } from 'lucide-react';
 import { GlassCard, Reveal, Badge, GradientButton, GhostButton, ProgressBar } from '../components/ui';
 import { apiRequest, getImageUrl } from '../utils/api';
@@ -21,6 +21,7 @@ export function JobsPage() {
   const [minMatch, setMinMatch] = useState(0);
   const [contractType, setContractType] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export function JobsPage() {
   useEffect(() => {
     const fetchJobs = async () => {
       setLoading(true);
+      setErrorMessage(null);
       try {
         const params = new URLSearchParams();
         if (query) params.append('search', query);
@@ -50,9 +52,13 @@ export function JobsPage() {
           setJobsList(res.jobs);
         } else {
           setJobsList([]);
+          if (res.message) {
+            setErrorMessage(res.message);
+          }
         }
-      } catch {
+      } catch (err: unknown) {
         setJobsList([]);
+        setErrorMessage((err as Error).message || 'Failed to fetch jobs from Adzuna API.');
       } finally {
         setLoading(false);
       }
@@ -68,11 +74,11 @@ export function JobsPage() {
       const q = query.toLowerCase();
       const mq = !q || (j.role || j.title || '').toLowerCase().includes(q) || j.company.toLowerCase().includes(q) || (j.category || '').toLowerCase().includes(q);
       const ml = location === 'all' || j.location === location;
-      const mm = (j.match || 75) >= minMatch;
+      const mm = (j.match || 0) >= minMatch;
       const mc = contractType === 'all' || (j.contractType || j.type || '').toLowerCase().includes(contractType.toLowerCase());
       return mq && ml && mm && mc;
     })
-    .sort((a, b) => sortBy === 'match' ? (b.match || 0) - (a.match || 0) : (a.postedDays || 0) - (b.postedDays || 0)), [jobsList, query, location, minMatch, sortBy, contractType]);
+    .sort((a, b) => (sortBy === 'match' ? (b.match || 0) - (a.match || 0) : (a.postedDays || 0) - (b.postedDays || 0))), [jobsList, query, location, minMatch, sortBy, contractType]);
 
   const itemsPerPage = 8;
   const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
@@ -179,7 +185,9 @@ export function JobsPage() {
         <div className="py-20 text-center">
           <AlertCircle size={40} className="mx-auto text-soft" />
           <h3 className="mt-3 font-display text-xl font-bold">No jobs found</h3>
-          <p className="mt-1 text-sm text-soft">Try adjusting your search criteria or resetting filters.</p>
+          <p className="mt-1 text-sm text-soft">
+            {errorMessage || 'Try adjusting your search criteria or resetting filters.'}
+          </p>
           <button onClick={() => { setQuery(''); setLocation('all'); setMinMatch(0); setContractType('all'); }}
             className="mt-4 rounded-xl bg-primary/10 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20">
             Reset Filters
@@ -211,7 +219,7 @@ export function JobsPage() {
                       </button>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Badge variant="success"><Brain size={12} /> {j.match || 80}% match</Badge>
+                      <Badge variant="success"><Brain size={12} /> {j.match || 75}% match</Badge>
                       <Badge variant="primary">{j.type || 'Full Time'}</Badge>
                       {j.remote && <Badge variant="accent">Remote</Badge>}
                       {j.category && <Badge variant="neutral">{j.category}</Badge>}
@@ -221,19 +229,25 @@ export function JobsPage() {
                         <p className="text-xs text-soft">Salary</p><p className="font-semibold">{j.package || j.salary || 'Salary Not Disclosed'}</p>
                       </div>
                       <div className="rounded-xl border border-base bg-soft/40 p-3">
-                        <p className="text-xs text-soft">Posted</p><p className="font-semibold">{j.postedDays ? `${j.postedDays}d ago` : 'Recently'}</p>
+                        <p className="text-xs text-soft">Posted</p><p className="font-semibold">{j.postedDays !== undefined ? `${j.postedDays}d ago` : 'Recently'}</p>
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {(j.skills || []).slice(0, 5).map((s) => (
-                        <span key={s} className="rounded-lg bg-soft px-2.5 py-1 text-xs font-medium text-soft">{s}</span>
-                      ))}
+                      {Array.isArray(j.skills) && j.skills.length > 0 ? (
+                        j.skills.slice(0, 5).map((s) => (
+                          <span key={s} className="rounded-lg bg-soft px-2.5 py-1 text-xs font-medium text-soft">{s}</span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-soft italic">Skills not specified</span>
+                      )}
                     </div>
                   </div>
                   <div className="mt-4 flex items-center justify-between border-t border-base pt-4">
-                    <span className="text-xs text-soft">Adzuna Verified</span>
+                    <span className="text-xs font-semibold text-success flex items-center gap-1">
+                      <ShieldCheck size={14} /> Adzuna Verified
+                    </span>
                     <div className="flex gap-2">
-                      {j.redirectUrl && (
+                      {j.redirectUrl ? (
                         <a
                           href={j.redirectUrl}
                           target="_blank"
@@ -242,6 +256,10 @@ export function JobsPage() {
                         >
                           Apply <Zap size={12} />
                         </a>
+                      ) : (
+                        <button disabled className="inline-flex items-center gap-1 text-xs font-semibold rounded-lg bg-soft/40 px-3 py-1.5 text-soft cursor-not-allowed opacity-60">
+                          Link Unavailable
+                        </button>
                       )}
                       <Link to={`/jobs/${j.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
                         Details <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
@@ -333,6 +351,9 @@ export function JobDetailPage() {
     if (!id || applied || applying) return;
     if (job?.redirectUrl) {
       window.open(job.redirectUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      setErrorMsg('Application link unavailable for this position.');
+      return;
     }
     setApplying(true);
     setErrorMsg(null);
@@ -366,25 +387,16 @@ export function JobDetailPage() {
   if (!job || fetchError) {
     return (
       <div className="py-20 text-center">
-        <h2 className="font-display text-2xl font-bold">Job not found</h2>
-        <p className="mt-2 text-sm text-soft">The job position you are looking for does not exist or has expired.</p>
+        <h2 className="font-display text-2xl font-bold">Job position not found</h2>
+        <p className="mt-2 text-sm text-soft">{fetchError || 'The job position you are looking for does not exist or has expired on Adzuna.'}</p>
         <Link to="/jobs" className="mt-4 inline-block font-semibold text-primary">Back to jobs</Link>
       </div>
     );
   }
 
-  const requirementsList = Array.isArray(job.requirements) && job.requirements.length > 0 ? job.requirements : [
-    `Proficiency in ${(job.skills || []).slice(0, 2).join(' and ') || 'relevant tech stack'}`,
-    'Strong analytical and problem-solving skills',
-    'Experience working with modern web or cloud APIs',
-    'Good verbal and written communication skills',
-  ];
-
-  const responsibilitiesList = Array.isArray(job.responsibilities) && job.responsibilities.length > 0 ? job.responsibilities : [
-    'Design, implement, and maintain core software features',
-    'Collaborate closely with product managers and engineering teammates',
-    'Perform code reviews, testing, and continuous deployment',
-  ];
+  const requirementsList = Array.isArray(job.requirements) ? job.requirements : [];
+  const responsibilitiesList = Array.isArray(job.responsibilities) ? job.responsibilities : [];
+  const skillsList = Array.isArray(job.skills) ? job.skills : [];
 
   return (
     <div className="space-y-6">
@@ -411,7 +423,7 @@ export function JobDetailPage() {
                 />
                 <div className="flex-1">
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="success"><Brain size={12} /> {job.match || 88}% AI Match</Badge>
+                    <Badge variant="success"><Brain size={12} /> {job.match || 75}% AI Match</Badge>
                     <Badge variant="primary">{job.type || job.contractType || 'Full Time'}</Badge>
                     {job.remote && <Badge variant="accent">Remote</Badge>}
                     {job.category && <Badge variant="neutral">{job.category}</Badge>}
@@ -423,7 +435,7 @@ export function JobDetailPage() {
                   <Bookmark size={20} className={bookmarked ? 'fill-primary text-primary' : 'text-soft'} />
                 </button>
               </div>
-              <p className="relative mt-4 text-sm leading-relaxed text-soft">{job.description}</p>
+              <p className="relative mt-4 text-sm leading-relaxed text-soft whitespace-pre-line">{job.description}</p>
             </GlassCard>
           </Reveal>
 
@@ -431,11 +443,15 @@ export function JobDetailPage() {
             <GlassCard>
               <h3 className="font-display text-lg font-semibold">Requirements</h3>
               <div className="mt-4 space-y-2.5">
-                {requirementsList.map((r, idx) => (
-                  <div key={idx} className="flex items-start gap-3">
-                    <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-primary" /><span className="text-sm">{r}</span>
-                  </div>
-                ))}
+                {requirementsList.length > 0 ? (
+                  requirementsList.map((r, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-primary" /><span className="text-sm">{r}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-soft italic">Specified in full job description above.</p>
+                )}
               </div>
             </GlassCard>
           </Reveal>
@@ -444,11 +460,15 @@ export function JobDetailPage() {
             <GlassCard>
               <h3 className="font-display text-lg font-semibold">Responsibilities</h3>
               <div className="mt-4 space-y-2.5">
-                {responsibilitiesList.map((r, idx) => (
-                  <div key={idx} className="flex items-start gap-3">
-                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-to-r from-primary to-secondary" /><span className="text-sm">{r}</span>
-                  </div>
-                ))}
+                {responsibilitiesList.length > 0 ? (
+                  responsibilitiesList.map((r, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-to-r from-primary to-secondary" /><span className="text-sm">{r}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-soft italic">Specified in full job description above.</p>
+                )}
               </div>
             </GlassCard>
           </Reveal>
@@ -457,9 +477,13 @@ export function JobDetailPage() {
             <GlassCard>
               <h3 className="font-display text-lg font-semibold">Required Skills</h3>
               <div className="mt-4 flex flex-wrap gap-2">
-                {(job.skills || []).map((s) => (
-                  <span key={s} className="rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-sm font-semibold text-primary">{s}</span>
-                ))}
+                {skillsList.length > 0 ? (
+                  skillsList.map((s) => (
+                    <span key={s} className="rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-sm font-semibold text-primary">{s}</span>
+                  ))
+                ) : (
+                  <p className="text-sm text-soft italic">Skills not specified</p>
+                )}
               </div>
             </GlassCard>
           </Reveal>
@@ -503,12 +527,12 @@ export function JobDetailPage() {
               <h3 className="font-display text-lg font-semibold">Job Overview</h3>
               <div className="mt-4 space-y-3">
                 {[
-                  { icon: DollarSign, label: 'Package', value: job.package || job.salary || 'Competitive Salary' },
+                  { icon: DollarSign, label: 'Package', value: job.package || job.salary || 'Salary Not Disclosed' },
                   { icon: MapPin, label: 'Location', value: job.location },
                   { icon: Briefcase, label: 'Type', value: job.type || job.contractType || 'Full Time' },
                   { icon: Building2, label: 'Eligibility', value: job.eligibility || 'Degree in CS / Engineering' },
                   { icon: Calendar, label: 'Deadline', value: job.deadline || 'Apply Soon' },
-                  { icon: Clock, label: 'Posted', value: job.postedDays ? `${job.postedDays} days ago` : 'Recently' },
+                  { icon: Clock, label: 'Posted', value: job.postedDays !== undefined ? `${job.postedDays} days ago` : 'Recently' },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between border-b border-base pb-3">
                     <span className="flex items-center gap-2 text-sm text-soft"><row.icon size={16} /> {row.label}</span>
@@ -524,9 +548,15 @@ export function JobDetailPage() {
               )}
 
               <div className="mt-5 space-y-3">
-                <GradientButton onClick={handleApply} disabled={applied || applying} className="w-full py-3.5" icon={applying ? <Loader2 size={18} className="animate-spin" /> : applied ? <CheckCircle2 size={18} /> : <Zap size={18} />}>
-                  {applying ? 'Submitting...' : applied ? 'Application Sent!' : 'Apply Now'}
-                </GradientButton>
+                {job.redirectUrl ? (
+                  <GradientButton onClick={handleApply} disabled={applied || applying} className="w-full py-3.5" icon={applying ? <Loader2 size={18} className="animate-spin" /> : applied ? <CheckCircle2 size={18} /> : <Zap size={18} />}>
+                    {applying ? 'Submitting...' : applied ? 'Application Sent!' : 'Apply Now'}
+                  </GradientButton>
+                ) : (
+                  <button disabled className="w-full py-3.5 rounded-2xl bg-soft/40 text-sm font-semibold text-soft cursor-not-allowed opacity-60 flex items-center justify-center gap-2">
+                    <ExternalLink size={18} /> Application link unavailable
+                  </button>
+                )}
                 <GhostButton onClick={() => setBookmarked(!bookmarked)} className="w-full py-3.5" icon={<Bookmark size={18} className={bookmarked ? 'fill-primary text-primary' : ''} />}>
                   {bookmarked ? 'Saved' : 'Save for later'}
                 </GhostButton>
@@ -540,12 +570,22 @@ export function JobDetailPage() {
               <div className="relative">
                 <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Brain size={18} /> AI Match Analysis</div>
                 <div className="mt-4 flex items-center gap-4">
-                  <div className="font-display text-4xl font-bold gradient-text">{job.match || 88}%</div>
+                  <div className="font-display text-4xl font-bold gradient-text">{job.match || 75}%</div>
                   <div className="flex-1">
-                    <ProgressBar value={job.match || 88} color={(job.match || 88) >= 85 ? 'success' : 'primary'} />
-                    <p className="mt-2 text-xs text-soft">{(job.match || 88) >= 85 ? 'Excellent match — high success probability' : 'Good match — consider applying'}</p>
+                    <ProgressBar value={job.match || 75} color={(job.match || 75) >= 85 ? 'success' : 'primary'} />
+                    <p className="mt-2 text-xs text-soft">{(job.match || 75) >= 85 ? 'Excellent match — high success probability' : 'Good match — consider applying'}</p>
                   </div>
                 </div>
+
+                {Array.isArray(job.matchReasons) && job.matchReasons.length > 0 && (
+                  <div className="mt-4 border-t border-base/40 pt-3 space-y-1.5 text-xs text-soft">
+                    {job.matchReasons.map((reason, idx) => (
+                      <p key={idx} className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary" /> {reason}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             </GlassCard>
           </Reveal>

@@ -61,6 +61,12 @@ export interface Job {
   salaryMax?: number;
   country?: string;
   defaultLogo?: string;
+  source?: 'adzuna' | string;
+  created?: string;
+  salaryPredicted?: boolean;
+  matchedSkills?: string[];
+  missingSkills?: string[];
+  matchReasons?: string[];
 }
 
 export interface Application {

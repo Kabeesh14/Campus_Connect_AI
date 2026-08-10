@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { GlassCard, ProgressRing, ProgressBar, Reveal, Badge, GradientButton } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
-import { jobs, companies, interviews, notifications, activities, skillsProgress } from '../data/mockData';
+import { interviews, notifications, activities, skillsProgress } from '../data/mockData';
 import { getMediaUrl } from '../utils/api';
 
 function ProfileWidget() {
@@ -81,16 +81,18 @@ function StatRing({ label, value, icon: Icon, color }: { label: string; value: n
 
 function TodayOpportunities() {
   const [liveJobs, setLiveJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     import('../utils/api').then(({ apiRequest }) => {
-      apiRequest('/jobs').then((res) => {
-        if (res.success && res.jobs) setLiveJobs(res.jobs.slice(0, 3));
-      }).catch(() => {});
+      apiRequest('/jobs')
+        .then((res) => {
+          if (res.success && Array.isArray(res.jobs)) setLiveJobs(res.jobs.slice(0, 3));
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
     });
   }, []);
-
-  const displayJobs = liveJobs.length > 0 ? liveJobs : jobs.slice(0, 3);
 
   return (
     <GlassCard className="lg:col-span-2">
@@ -102,29 +104,36 @@ function TodayOpportunities() {
         <Link to="/jobs" className="text-sm font-semibold text-primary">View all</Link>
       </div>
       <div className="space-y-3">
-        {displayJobs.map((j, i) => (
-          <Link key={j.id} to={`/jobs/${j.id}`}>
-            <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
-              className="group flex items-center gap-3 rounded-2xl border border-base bg-soft/40 p-3 transition-all hover:border-primary/40 hover:bg-soft">
-              <img
-                src={getMediaUrl(j.logo)}
-                alt={j.company}
-                onError={(e) => {
-                  e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
-                }}
-                className="h-11 w-11 rounded-xl object-cover"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{j.role || j.title}</p>
-                <p className="text-xs text-soft">{j.company} • {j.location}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="success">{j.match || 90}% match</Badge>
-                <ArrowRight size={16} className="text-soft transition-transform group-hover:translate-x-1 group-hover:text-primary" />
-              </div>
-            </motion.div>
-          </Link>
-        ))}
+        {loading ? (
+          <p className="text-xs text-soft py-4 text-center">Loading live Adzuna jobs...</p>
+        ) : liveJobs.length === 0 ? (
+          <p className="text-xs text-soft py-4 text-center italic">No live jobs available right now.</p>
+        ) : (
+          liveJobs.map((j, i) => (
+            <Link key={j.id} to={`/jobs/${j.id}`}>
+              <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+                className="group flex items-center gap-3 rounded-2xl border border-base bg-soft/40 p-3 transition-all hover:border-primary/40 hover:bg-soft">
+                <img
+                  src={getMediaUrl(j.logo)}
+                  alt={j.company}
+                  onError={(e) => {
+                    const initials = (j.company || 'CO').split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                    e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
+                  }}
+                  className="h-11 w-11 rounded-xl object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{j.role || j.title}</p>
+                  <p className="text-xs text-soft">{j.company} • {j.location}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="success">{j.match || 75}% match</Badge>
+                  <ArrowRight size={16} className="text-soft transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+                </div>
+              </motion.div>
+            </Link>
+          ))
+        )}
       </div>
     </GlassCard>
   );
@@ -162,16 +171,18 @@ function InterviewTimeline() {
 
 function RecommendedCompanies() {
   const [liveCompanies, setLiveCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     import('../utils/api').then(({ apiRequest }) => {
-      apiRequest('/companies').then((res) => {
-        if (res.success && res.companies) setLiveCompanies(res.companies);
-      }).catch(() => {});
+      apiRequest('/companies')
+        .then((res) => {
+          if (res.success && Array.isArray(res.companies)) setLiveCompanies(res.companies);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
     });
   }, []);
-
-  const displayCompanies = liveCompanies.length > 0 ? liveCompanies : companies;
 
   return (
     <GlassCard className="lg:col-span-3">
@@ -182,31 +193,38 @@ function RecommendedCompanies() {
         </div>
         <Link to="/companies" className="text-sm font-semibold text-primary">Explore</Link>
       </div>
-      <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
-        {displayCompanies.map((c) => (
-          <Link key={c.id} to={`/companies/${c.id}`} className="group min-w-[200px] shrink-0">
-            <motion.div whileHover={{ y: -6 }} className="rounded-2xl border border-base bg-soft/40 p-4 transition-all hover:border-primary/40 hover:shadow-glow">
-              <div className="flex items-center justify-between">
-                <img
-                  src={getMediaUrl(c.logo)}
-                  alt={c.name}
-                  onError={(e) => {
-                    e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
-                  }}
-                  className="h-12 w-12 rounded-xl object-cover"
-                />
-                {c.hiring && <Badge variant="success"><span className="h-1.5 w-1.5 rounded-full bg-success" /> Hiring</Badge>}
-              </div>
-              <h4 className="mt-3 font-semibold">{c.name}</h4>
-              <p className="text-xs text-soft">{c.industry}</p>
-              <div className="mt-2 flex items-center justify-between text-xs">
-                <span className="text-soft">{c.openRoles || 1} roles</span>
-                <span className="font-semibold text-primary">{c.salary}</span>
-              </div>
-            </motion.div>
-          </Link>
-        ))}
-      </div>
+      {loading ? (
+        <p className="text-xs text-soft py-4 text-center">Loading hiring companies...</p>
+      ) : liveCompanies.length === 0 ? (
+        <p className="text-xs text-soft py-4 text-center italic">No live hiring companies found right now.</p>
+      ) : (
+        <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+          {liveCompanies.map((c) => (
+            <Link key={c.id} to={`/companies/${c.id}`} className="group min-w-[200px] shrink-0">
+              <motion.div whileHover={{ y: -6 }} className="rounded-2xl border border-base bg-soft/40 p-4 transition-all hover:border-primary/40 hover:shadow-glow">
+                <div className="flex items-center justify-between">
+                  <img
+                    src={getMediaUrl(c.logo)}
+                    alt={c.name}
+                    onError={(e) => {
+                      const initials = (c.name || 'CO').split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                      e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
+                    }}
+                    className="h-12 w-12 rounded-xl object-cover"
+                  />
+                  {c.hiring && <Badge variant="success"><span className="h-1.5 w-1.5 rounded-full bg-success" /> Hiring</Badge>}
+                </div>
+                <h4 className="mt-3 font-semibold">{c.name}</h4>
+                <p className="text-xs text-soft">{c.industry}</p>
+                <div className="mt-3 flex items-center justify-between text-xs font-semibold">
+                  <span className="text-primary">{c.openRoles} role{c.openRoles > 1 ? 's' : ''}</span>
+                  <span className="text-soft">{c.salary}</span>
+                </div>
+              </motion.div>
+            </Link>
+          ))}
+        </div>
+      )}
     </GlassCard>
   );
 }

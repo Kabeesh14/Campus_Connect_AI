@@ -26,7 +26,7 @@ async function getStudentProfileForMatch(userId) {
 }
 
 /**
- * Get All Live Jobs (with optional search, location, category, contractType, minMatch)
+ * Get All Live Jobs (via Adzuna API, with AI profile matching & filters)
  */
 const getJobs = async (req, res, next) => {
   try {
@@ -46,13 +46,32 @@ const getJobs = async (req, res, next) => {
     const queryTerm = (search || q || '').trim();
     const locTerm = (location !== 'all' ? location : where).trim();
 
-    const rawJobs = await fetchAdzunaJobs({
-      what: queryTerm || 'software developer',
+    const adzunaRes = await fetchAdzunaJobs({
+      what: queryTerm,
       where: locTerm === 'all' ? '' : locTerm,
       country: 'in',
       page: parseInt(page, 10) || 1,
       resultsPerPage: 50,
     });
+
+    if (!adzunaRes.success) {
+      return res.status(502).json({
+        success: false,
+        source: 'adzuna',
+        message: adzunaRes.message || 'Failed to fetch live jobs from Adzuna API.',
+        jobs: [],
+      });
+    }
+
+    const rawJobs = adzunaRes.jobs || [];
+    if (rawJobs.length === 0) {
+      return res.status(200).json({
+        success: true,
+        source: 'adzuna',
+        count: 0,
+        jobs: [],
+      });
+    }
 
     const studentProfile = await getStudentProfileForMatch(req.user?.id);
 
@@ -67,7 +86,12 @@ const getJobs = async (req, res, next) => {
           missingSkills: aiResult.missingSkills,
         };
       }
-      return j;
+      // If unauthenticated or no student profile, default a baseline match score of 75
+      return {
+        ...j,
+        match: j.match || 75,
+        matchReasons: ['Default match estimate for profile'],
+      };
     }).filter((j) => {
       let matchesSearch = true;
       if (queryTerm) {
@@ -85,7 +109,7 @@ const getJobs = async (req, res, next) => {
 
       let matchesMinMatch = true;
       if (minMatch) {
-        matchesMinMatch = (j.match || 80) >= parseInt(minMatch, 10);
+        matchesMinMatch = (j.match || 0) >= parseInt(minMatch, 10);
       }
 
       let matchesCategory = true;
@@ -114,6 +138,7 @@ const getJobs = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      source: 'adzuna',
       count: filtered.length,
       jobs: filtered,
     });
@@ -138,7 +163,11 @@ const getJobById = async (req, res, next) => {
     let job = await getJobByIdFromStore(id);
 
     if (!job) {
-      return res.status(404).json({ success: false, message: 'Job not found' });
+      return res.status(404).json({
+        success: false,
+        source: 'adzuna',
+        message: 'Job position not found or has expired on Adzuna.',
+      });
     }
 
     const studentProfile = await getStudentProfileForMatch(req.user?.id);
@@ -155,6 +184,7 @@ const getJobById = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      source: 'adzuna',
       job,
     });
   } catch (error) {
@@ -170,11 +200,22 @@ const getCompanyJobs = async (req, res, next) => {
     const companyParam = req.params.company || req.query.company || '';
     const cleanCompany = companyParam.trim().toLowerCase();
 
-    const allJobs = await fetchAdzunaJobs({ what: cleanCompany || 'developer', where: '' });
+    const adzunaRes = await fetchAdzunaJobs({ what: cleanCompany, where: '' });
+    if (!adzunaRes.success) {
+      return res.status(502).json({
+        success: false,
+        source: 'adzuna',
+        message: adzunaRes.message || 'Error fetching company jobs.',
+        jobs: [],
+      });
+    }
+
+    const allJobs = adzunaRes.jobs || [];
     const companyJobs = allJobs.filter((j) => !cleanCompany || j.company.toLowerCase().includes(cleanCompany));
 
     return res.status(200).json({
       success: true,
+      source: 'adzuna',
       count: companyJobs.length,
       jobs: companyJobs,
     });
@@ -184,11 +225,21 @@ const getCompanyJobs = async (req, res, next) => {
 };
 
 /**
- * Get Dynamic Companies Aggregated from Live Jobs
+ * Get Dynamic Companies Aggregated from Real Adzuna Jobs
  */
 const getCompanies = async (req, res, next) => {
   try {
-    const allJobs = await fetchAdzunaJobs({ what: 'developer', where: '' });
+    const adzunaRes = await fetchAdzunaJobs({ what: 'software', where: '' });
+    if (!adzunaRes.success) {
+      return res.status(502).json({
+        success: false,
+        source: 'adzuna',
+        message: adzunaRes.message || 'Error fetching companies from Adzuna.',
+        companies: [],
+      });
+    }
+
+    const allJobs = adzunaRes.jobs || [];
     const companyMap = new Map();
 
     allJobs.forEach((j) => {
@@ -217,12 +268,12 @@ const getCompanies = async (req, res, next) => {
             { label: 'Location', value: j.location },
             { label: 'Work Mode', value: j.remote ? 'Remote' : 'On-site' },
           ],
-          culture: ['Flexible Hours', 'Innovation Focused', 'Learning Stipend'],
+          culture: ['Innovation Focused', 'Work-Life Balance', 'Professional Growth'],
           benefits: ['Health Insurance', 'Performance Bonus', 'Remote Work Options'],
           process: [
             { step: 'Application Review', detail: 'Screening by recruitment team' },
-            { step: 'Technical Interview', detail: 'Coding and system architecture' },
-            { step: 'Culture Fit', detail: 'Final round with engineering manager' },
+            { step: 'Technical Assessment', detail: 'Skills verification & coding round' },
+            { step: 'Final Interview', detail: 'Managerial & team culture interview' },
           ],
           gallery: [
             'https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg?auto=compress&cs=tinysrgb&w=600',
@@ -241,6 +292,7 @@ const getCompanies = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      source: 'adzuna',
       count: companiesList.length,
       companies: companiesList,
     });
@@ -255,7 +307,6 @@ const getCompanies = async (req, res, next) => {
 const getSavedJobs = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { query } = require('../config/db');
     const rows = await query('SELECT * FROM saved_jobs WHERE user_id = ? ORDER BY created_at DESC', [userId]);
     const savedJobs = rows.map((r) => {
       try {
@@ -264,7 +315,7 @@ const getSavedJobs = async (req, res, next) => {
         return { id: r.job_id };
       }
     });
-    return res.status(200).json({ success: true, savedJobs });
+    return res.status(200).json({ success: true, source: 'adzuna', savedJobs });
   } catch (error) {
     next(error);
   }
@@ -280,7 +331,6 @@ const saveJob = async (req, res, next) => {
     if (!jobId) {
       return res.status(400).json({ success: false, message: 'jobId is required' });
     }
-    const { query } = require('../config/db');
     const id = `sj-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const jobDataStr = JSON.stringify(job || { id: jobId });
     await query('INSERT INTO saved_jobs (id, user_id, job_id, job_data) VALUES (?, ?, ?, ?)', [id, userId, String(jobId), jobDataStr]);
@@ -297,7 +347,6 @@ const removeSavedJob = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
-    const { query } = require('../config/db');
     await query('DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?', [userId, String(id)]);
     return res.status(200).json({ success: true, message: 'Saved job removed', jobId: id });
   } catch (error) {

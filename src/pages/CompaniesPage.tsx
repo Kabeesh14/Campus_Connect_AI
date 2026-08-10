@@ -1,13 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   Search, MapPin, DollarSign, Users, Clock, Star, Heart, Share2,
-  CheckCircle2, Building2, ArrowRight, ArrowLeft, Zap, Award,
+  CheckCircle2, Building2, ArrowRight, ArrowLeft, Zap, Award, Loader2,
 } from 'lucide-react';
 import { GlassCard, Reveal, Badge, GradientButton, GhostButton } from '../components/ui';
-import { companies as mockCompanies } from '../data/mockData';
-import { useEffect } from 'react';
 import { apiRequest, getImageUrl } from '../utils/api';
 import { cn } from '../utils/cn';
 import type { Company } from '../types';
@@ -19,19 +17,23 @@ export function CompaniesPage() {
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [industry, setIndustry] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchCompanies = async () => {
       setLoading(true);
+      setErrorMsg(null);
       try {
         const res = await apiRequest('/companies');
-        if (res.success && res.companies) {
+        if (res.success && Array.isArray(res.companies)) {
           setCompaniesList(res.companies);
         } else {
-          setCompaniesList(mockCompanies);
+          setCompaniesList([]);
+          if (res.message) setErrorMsg(res.message);
         }
-      } catch {
-        setCompaniesList(mockCompanies);
+      } catch (err: unknown) {
+        setCompaniesList([]);
+        setErrorMsg((err as Error).message || 'Failed to fetch companies.');
       } finally {
         setLoading(false);
       }
@@ -91,8 +93,9 @@ export function CompaniesPage() {
       </Reveal>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <span className="text-soft">Loading live hiring companies...</span>
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 size={36} className="animate-spin text-primary" />
+          <span className="mt-3 text-sm text-soft">Loading live hiring companies from Adzuna...</span>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -105,7 +108,8 @@ export function CompaniesPage() {
                       src={getImageUrl(c.logo)}
                       alt={c.name}
                       onError={(e) => {
-                        e.currentTarget.src = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
+                        const initials = (c.name || 'CO').split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                        e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
                       }}
                       className="h-14 w-14 rounded-2xl object-cover ring-2 ring-primary/15"
                     />
@@ -148,7 +152,7 @@ export function CompaniesPage() {
       {!loading && filtered.length === 0 && (
         <div className="py-20 text-center">
           <Building2 size={48} className="mx-auto text-soft/40" />
-          <p className="mt-4 text-soft">No companies match your filters.</p>
+          <p className="mt-4 text-soft font-semibold">{errorMsg || 'No companies match your filters.'}</p>
         </div>
       )}
     </div>
@@ -158,31 +162,49 @@ export function CompaniesPage() {
 export function CompanyDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [company, setCompany] = useState<Company | null>(() => mockCompanies.find((c) => c.id === id) || null);
+  const [company, setCompany] = useState<Company | null>(null);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'overview' | 'culture' | 'process' | 'gallery'>('overview');
 
   useEffect(() => {
     if (!id) return;
+    setLoading(true);
     const fetchCompany = async () => {
       try {
         const res = await apiRequest('/companies');
-        if (res.success && res.companies) {
+        if (res.success && Array.isArray(res.companies)) {
           const found = res.companies.find((c: Company) => c.id === id || c.name.toLowerCase() === id.toLowerCase());
           if (found) setCompany(found);
         }
       } catch {
-        // Fallback to mock
+        setCompany(null);
+      } finally {
+        setLoading(false);
       }
     };
     fetchCompany();
   }, [id]);
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24">
+        <Loader2 size={36} className="animate-spin text-primary" />
+        <p className="mt-3 text-sm text-soft">Loading company profile...</p>
+      </div>
+    );
+  }
+
   if (!company) {
-    return <div className="py-20 text-center"><p className="text-soft">Company not found.</p><Link to="/companies" className="mt-4 inline-block font-semibold text-primary">Back to companies</Link></div>;
+    return (
+      <div className="py-20 text-center">
+        <h2 className="font-display text-2xl font-bold">Company not found</h2>
+        <p className="mt-2 text-sm text-soft">The company you are looking for has no active roles or is unavailable.</p>
+        <Link to="/companies" className="mt-4 inline-block font-semibold text-primary">Back to companies</Link>
+      </div>
+    );
   }
 
   const defaultCover = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80';
-  const defaultLogo = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
   const defaultCulture = company.culture || ['Innovation & Fast Paced', 'Hybrid Work Culture', 'Continuous Learning Stipend'];
   const defaultBenefits = company.benefits || ['Health Insurance', 'Stock Options / RSUs', 'Annual Learning Allowance'];
   const defaultProcess = company.process || [
@@ -192,10 +214,10 @@ export function CompanyDetailPage() {
     { step: 'HR Interview', detail: 'Culture & Behavioral Fit' },
   ];
   const defaultStats = company.stats || [
-    { label: 'Acceptance Rate', value: '12%' },
-    { label: 'Avg Package', value: company.salary || '₹12L - ₹24L' },
-    { label: 'Min CGPA', value: '7.5' },
-    { label: 'Process Length', value: '2 Weeks' },
+    { label: 'Open Positions', value: `${company.openRoles || 1}+` },
+    { label: 'Avg Package', value: company.salary || 'Salary Not Disclosed' },
+    { label: 'Location', value: company.location },
+    { label: 'Deadline', value: `${company.deadlineDays || 14}d` },
   ];
   const defaultGallery = company.gallery || [
     'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=600&q=80',
@@ -229,7 +251,10 @@ export function CompanyDetailPage() {
                 <img
                   src={getImageUrl(company.logo)}
                   alt={company.name}
-                  onError={(e) => { e.currentTarget.src = defaultLogo; }}
+                  onError={(e) => {
+                    const initials = (company.name || 'CO').split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                    e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366F1"/><text x="50" y="55" font-family="sans-serif" font-size="36" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
+                  }}
                   className="h-20 w-20 rounded-2xl object-cover ring-4 ring-[rgb(var(--card))] sm:-mt-10"
                 />
                 <div>
@@ -238,20 +263,20 @@ export function CompanyDetailPage() {
                     <span className="flex items-center gap-1"><Building2 size={14} /> {company.industry}</span>
                     <span>•</span>
                     <span className="flex items-center gap-1"><MapPin size={14} /> {company.location}</span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1"><Users size={14} /> {company.size || '10,000+ Employees'}</span>
                   </div>
                 </div>
               </div>
               <div className="flex gap-2">
                 <GhostButton icon={<Share2 size={16} />} className="px-4 py-2.5">Share</GhostButton>
-                <GradientButton icon={<Zap size={16} />} className="px-5 py-2.5">Quick Apply</GradientButton>
+                <Link to="/jobs">
+                  <GradientButton icon={<Zap size={16} />} className="px-5 py-2.5">View Live Roles</GradientButton>
+                </Link>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {company.hiring && <Badge variant="success"><span className="h-1.5 w-1.5 rounded-full bg-success" /> Actively Hiring</Badge>}
-              <Badge variant="primary"><Star size={12} className="fill-warning text-warning" /> {company.rating || 4.8} rating</Badge>
-              <Badge variant="accent">{company.openRoles || 1} open roles</Badge>
+              <Badge variant="primary"><Star size={12} className="fill-warning text-warning" /> {company.rating || 4.5} rating</Badge>
+              <Badge variant="accent">{company.openRoles || 1} open role{company.openRoles > 1 ? 's' : ''}</Badge>
               <Badge variant="warning"><Clock size={12} /> {company.deadlineDays || 14} days to deadline</Badge>
             </div>
           </div>
@@ -287,16 +312,16 @@ export function CompanyDetailPage() {
             <GlassCard>
               <h3 className="font-display text-lg font-semibold">About {company.name}</h3>
               <p className="mt-3 text-sm leading-relaxed text-soft">
-                {company.name} is a leading {(company.industry || 'Tech').toLowerCase()} company with {(company.employees || 50000).toLocaleString()}+ employees worldwide. They are currently hiring for {company.openRoles || 1} roles with an eligibility of {company.eligibility || 'B.Tech / M.Tech'}. The average package is {company.salary} and the application deadline is in {company.deadlineDays || 14} days.
+                {company.name} is hiring for {company.openRoles || 1} live position(s) on Adzuna. Average salary package is {company.salary || 'disclosed upon application'} located in {company.location}.
               </p>
               <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-base bg-soft/40 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wider text-soft">Eligibility</p>
-                  <p className="mt-1 font-semibold">{company.eligibility || 'B.Tech / M.Tech / MCA'}</p>
+                  <p className="mt-1 font-semibold">{company.eligibility || 'Degree in CS / Engineering'}</p>
                 </div>
                 <div className="rounded-2xl border border-base bg-soft/40 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wider text-soft">Package Range</p>
-                  <p className="mt-1 font-semibold">{company.salary}</p>
+                  <p className="mt-1 font-semibold">{company.salary || 'Salary Not Disclosed'}</p>
                 </div>
               </div>
             </GlassCard>
