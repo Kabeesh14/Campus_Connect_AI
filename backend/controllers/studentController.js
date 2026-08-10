@@ -30,6 +30,20 @@ const sanitizeName = (rawName, email) => {
   return 'Student User';
 };
 
+const deleteUploadedFile = (relativePath) => {
+  if (!relativePath || typeof relativePath !== 'string') return;
+  if (relativePath.startsWith('http://') || relativePath.startsWith('https://')) return;
+  try {
+    const clean = relativePath.trim().replace(/^[/\\]+/, '');
+    const absPath = path.resolve(__dirname, '..', clean);
+    if (fs.existsSync(absPath)) {
+      fs.unlinkSync(absPath);
+    }
+  } catch (err) {
+    console.error('[File Clean Up Error]', err.message);
+  }
+};
+
 /**
  * Get Logged-in Student's Complete Profile
  */
@@ -47,23 +61,60 @@ const getProfile = async (req, res, next) => {
 
     // Fetch related records
     const skills = await query('SELECT id, name, level, category FROM skills WHERE student_id = ? ORDER BY created_at ASC', [student.id]);
-    const projects = await query('SELECT id, name, desc, stack, link FROM projects WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
-    const certifications = await query('SELECT id, name, issuer, year FROM certifications WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
+    const projects = await query('SELECT * FROM projects WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
+    const certifications = await query('SELECT * FROM certifications WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
     const resumes = await query('SELECT id, file_name, file_path, file_size, mime_type, uploaded_at FROM resumes WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1', [student.id]);
 
-    const formattedProjects = projects.map((p) => ({
-      ...p,
-      stack: typeof p.stack === 'string' ? p.stack.split(',').map((s) => s.trim()) : p.stack,
+    const formattedProjects = projects.map((p) => {
+      let parsedStack = [];
+      if (Array.isArray(p.stack)) {
+        parsedStack = p.stack;
+      } else if (typeof p.stack === 'string') {
+        try {
+          const jsonParsed = JSON.parse(p.stack);
+          parsedStack = Array.isArray(jsonParsed) ? jsonParsed : p.stack.split(',').map((s) => s.trim());
+        } catch {
+          parsedStack = p.stack.split(',').map((s) => s.trim());
+        }
+      }
+      return {
+        id: p.id,
+        name: p.name,
+        desc: p.desc || p.description || '',
+        stack: parsedStack,
+        link: p.link || p.github_url || p.live_demo_url || '',
+        githubUrl: p.github_url || p.link || '',
+        liveDemoUrl: p.live_demo_url || '',
+        startDate: p.start_date || '',
+        endDate: p.end_date || '',
+        imageUrl: p.image_url || '',
+        createdAt: p.created_at,
+      };
+    });
+
+    const formattedCerts = certifications.map((c) => ({
+      id: c.id,
+      name: c.name,
+      issuer: c.issuer || c.issuing_organization || '',
+      year: c.year || c.issue_date || '',
+      issueDate: c.issue_date || c.year || '',
+      credentialId: c.credential_id || '',
+      credentialUrl: c.credential_url || '',
+      certificateFileUrl: c.certificate_file_url || '',
+      createdAt: c.created_at,
     }));
 
-    // Calculate profile completion percentage
+    // Calculate profile completion percentage (9 fields)
     let completedFields = 0;
-    const totalFields = 6;
+    const totalFields = 9;
     if (student.name) completedFields++;
     if (student.headline) completedFields++;
     if (student.avatar) completedFields++;
+    if (student.bio) completedFields++;
+    if (student.department) completedFields++;
     if (skills.length > 0) completedFields++;
     if (formattedProjects.length > 0) completedFields++;
+    if (formattedCerts.length > 0) completedFields++;
     if (resumes.length > 0) completedFields++;
     const completion = Math.min(100, Math.round((completedFields / totalFields) * 100));
 
@@ -86,7 +137,7 @@ const getProfile = async (req, res, next) => {
         },
         skills,
         projects: formattedProjects,
-        certifications,
+        certifications: formattedCerts,
         resume: resumes[0] || null,
       },
     });
@@ -208,37 +259,225 @@ const deleteSkill = async (req, res, next) => {
 };
 
 /**
- * Projects CRUD
+ * Projects API & CRUD
  */
+const getProjects = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const projects = await query('SELECT * FROM projects WHERE student_id = ? ORDER BY created_at DESC', [studentId]);
+    const formatted = projects.map((p) => {
+      let parsedStack = [];
+      if (Array.isArray(p.stack)) {
+        parsedStack = p.stack;
+      } else if (typeof p.stack === 'string') {
+        try {
+          const jsonParsed = JSON.parse(p.stack);
+          parsedStack = Array.isArray(jsonParsed) ? jsonParsed : p.stack.split(',').map((s) => s.trim());
+        } catch {
+          parsedStack = p.stack.split(',').map((s) => s.trim());
+        }
+      }
+      return {
+        id: p.id,
+        name: p.name,
+        desc: p.desc || p.description || '',
+        stack: parsedStack,
+        link: p.link || p.github_url || p.live_demo_url || '',
+        githubUrl: p.github_url || p.link || '',
+        liveDemoUrl: p.live_demo_url || '',
+        startDate: p.start_date || '',
+        endDate: p.end_date || '',
+        imageUrl: p.image_url || '',
+        createdAt: p.created_at,
+      };
+    });
+
+    return res.status(200).json({ success: true, projects: formatted });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const addProject = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { name, desc, stack = [], link = '' } = req.body;
+    const name = (req.body.name || req.body.projectName || '').trim();
+    const desc = (req.body.desc || req.body.description || '').trim();
+    const stackRaw = req.body.stack || req.body.technologies || [];
+    const githubUrl = (req.body.github_url || req.body.githubUrl || req.body.link || '').trim();
+    const liveDemoUrl = (req.body.live_demo_url || req.body.liveDemoUrl || '').trim();
+    const startDate = (req.body.start_date || req.body.startDate || '').trim();
+    const endDate = (req.body.end_date || req.body.endDate || '').trim();
 
     if (!name) {
-      return res.status(400).json({ success: false, message: 'Project name is required.' });
+      return res.status(400).json({ success: false, message: 'Project Name is required.' });
+    }
+    if (!desc) {
+      return res.status(400).json({ success: false, message: 'Project Description is required.' });
+    }
+    if (!stackRaw || (Array.isArray(stackRaw) && stackRaw.length === 0) || (typeof stackRaw === 'string' && !stackRaw.trim())) {
+      return res.status(400).json({ success: false, message: 'Technologies / Skills are required.' });
     }
 
     const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
-    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student not found.' });
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
     const studentId = students[0].id;
 
-    const projectId = 'pr-' + crypto.randomUUID();
-    const stackJson = JSON.stringify(stack);
+    let stackArr = [];
+    if (Array.isArray(stackRaw)) {
+      stackArr = stackRaw;
+    } else if (typeof stackRaw === 'string') {
+      try {
+        const parsed = JSON.parse(stackRaw);
+        stackArr = Array.isArray(parsed) ? parsed : stackRaw.split(',').map((s) => s.trim());
+      } catch {
+        stackArr = stackRaw.split(',').map((s) => s.trim());
+      }
+    }
+    const stackJson = JSON.stringify(stackArr);
 
-    await query('INSERT INTO projects (id, student_id, name, `desc`, stack, link) VALUES (?, ?, ?, ?, ?, ?)', [
-      projectId,
+    const imageUrl = req.file ? `/uploads/projects/${req.file.filename}` : '';
+    const projectId = 'pr-' + crypto.randomUUID();
+
+    await query(
+      `INSERT INTO projects 
+        (id, student_id, name, \`desc\`, stack, link, github_url, live_demo_url, start_date, end_date, image_url) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        studentId,
+        name,
+        desc,
+        stackJson,
+        githubUrl || liveDemoUrl,
+        githubUrl,
+        liveDemoUrl,
+        startDate,
+        endDate,
+        imageUrl,
+      ]
+    );
+
+    const createdProject = {
+      id: projectId,
       studentId,
       name,
       desc,
-      stackJson,
-      link,
-    ]);
+      stack: stackArr,
+      link: githubUrl || liveDemoUrl,
+      githubUrl,
+      liveDemoUrl,
+      startDate,
+      endDate,
+      imageUrl,
+    };
 
     return res.status(201).json({
       success: true,
-      message: 'Project added.',
-      project: { id: projectId, name, desc, stack, link },
+      message: 'Project added successfully.',
+      project: createdProject,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateProject = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const existing = await query('SELECT * FROM projects WHERE id = ? AND student_id = ?', [id, studentId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found or access denied.' });
+    }
+
+    const prev = existing[0];
+    const name = (req.body.name || req.body.projectName || prev.name).trim();
+    const desc = (req.body.desc || req.body.description || prev.desc || prev.description || '').trim();
+    const stackRaw = req.body.stack || req.body.technologies || prev.stack;
+    const githubUrl = (req.body.github_url !== undefined ? req.body.github_url : (req.body.githubUrl !== undefined ? req.body.githubUrl : prev.github_url || prev.link || '')).trim();
+    const liveDemoUrl = (req.body.live_demo_url !== undefined ? req.body.live_demo_url : (req.body.liveDemoUrl !== undefined ? req.body.liveDemoUrl : prev.live_demo_url || '')).trim();
+    const startDate = (req.body.start_date !== undefined ? req.body.start_date : (req.body.startDate !== undefined ? req.body.startDate : prev.start_date || '')).trim();
+    const endDate = (req.body.end_date !== undefined ? req.body.end_date : (req.body.endDate !== undefined ? req.body.endDate : prev.end_date || '')).trim();
+
+    if (!name) return res.status(400).json({ success: false, message: 'Project Name is required.' });
+    if (!desc) return res.status(400).json({ success: false, message: 'Project Description is required.' });
+
+    let stackArr = [];
+    if (Array.isArray(stackRaw)) {
+      stackArr = stackRaw;
+    } else if (typeof stackRaw === 'string') {
+      try {
+        const parsed = JSON.parse(stackRaw);
+        stackArr = Array.isArray(parsed) ? parsed : stackRaw.split(',').map((s) => s.trim());
+      } catch {
+        stackArr = stackRaw.split(',').map((s) => s.trim());
+      }
+    }
+    const stackJson = JSON.stringify(stackArr);
+
+    let imageUrl = prev.image_url || '';
+    if (req.file) {
+      imageUrl = `/uploads/projects/${req.file.filename}`;
+      if (prev.image_url) {
+        deleteUploadedFile(prev.image_url);
+      }
+    }
+
+    await query(
+      `UPDATE projects SET 
+        name = ?, 
+        \`desc\` = ?, 
+        stack = ?, 
+        github_url = ?, 
+        live_demo_url = ?, 
+        start_date = ?, 
+        end_date = ?, 
+        image_url = ?,
+        link = ?
+       WHERE id = ? AND student_id = ?`,
+      [
+        name,
+        desc,
+        stackJson,
+        githubUrl,
+        liveDemoUrl,
+        startDate,
+        endDate,
+        imageUrl,
+        githubUrl || liveDemoUrl,
+        id,
+        studentId,
+      ]
+    );
+
+    const updatedProject = {
+      id,
+      studentId,
+      name,
+      desc,
+      stack: stackArr,
+      link: githubUrl || liveDemoUrl,
+      githubUrl,
+      liveDemoUrl,
+      startDate,
+      endDate,
+      imageUrl,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: 'Project updated successfully.',
+      project: updatedProject,
     });
   } catch (error) {
     next(error);
@@ -247,43 +486,191 @@ const addProject = async (req, res, next) => {
 
 const deleteProject = async (req, res, next) => {
   try {
+    const userId = req.user.id;
     const { id } = req.params;
-    await query('DELETE FROM projects WHERE id = ?', [id]);
-    return res.status(200).json({ success: true, message: 'Project deleted.' });
+
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const existing = await query('SELECT * FROM projects WHERE id = ? AND student_id = ?', [id, studentId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found or access denied.' });
+    }
+
+    if (existing[0].image_url) {
+      deleteUploadedFile(existing[0].image_url);
+    }
+
+    await query('DELETE FROM projects WHERE id = ? AND student_id = ?', [id, studentId]);
+    return res.status(200).json({ success: true, message: 'Project deleted successfully.' });
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Certifications CRUD
+ * Certifications API & CRUD
  */
+const getCertifications = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const certifications = await query('SELECT * FROM certifications WHERE student_id = ? ORDER BY created_at DESC', [studentId]);
+    const formatted = certifications.map((c) => ({
+      id: c.id,
+      name: c.name,
+      issuer: c.issuer || c.issuing_organization || '',
+      year: c.year || c.issue_date || '',
+      issueDate: c.issue_date || c.year || '',
+      credentialId: c.credential_id || '',
+      credentialUrl: c.credential_url || '',
+      certificateFileUrl: c.certificate_file_url || '',
+      createdAt: c.created_at,
+    }));
+
+    return res.status(200).json({ success: true, certifications: formatted });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const addCertification = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { name, issuer, year } = req.body;
+    const name = (req.body.name || req.body.certificationName || '').trim();
+    const issuer = (req.body.issuer || req.body.issuingOrganization || '').trim();
+    const issueDate = (req.body.issue_date || req.body.issueDate || req.body.year || '').trim();
+    const credentialId = (req.body.credential_id || req.body.credentialId || '').trim();
+    const credentialUrl = (req.body.credential_url || req.body.credentialUrl || '').trim();
 
-    if (!name || !issuer || !year) {
-      return res.status(400).json({ success: false, message: 'Certification name, issuer, and year are required.' });
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'Certification Name is required.' });
+    }
+    if (!issuer) {
+      return res.status(400).json({ success: false, message: 'Issuing Organization is required.' });
     }
 
     const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
-    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student not found.' });
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
     const studentId = students[0].id;
 
+    const certFileUrl = req.file ? `/uploads/certifications/${req.file.filename}` : '';
     const certId = 'ct-' + crypto.randomUUID();
-    await query('INSERT INTO certifications (id, student_id, name, issuer, year) VALUES (?, ?, ?, ?, ?)', [
-      certId,
+
+    await query(
+      `INSERT INTO certifications 
+        (id, student_id, name, issuer, year, issue_date, credential_id, credential_url, certificate_file_url) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        certId,
+        studentId,
+        name,
+        issuer,
+        issueDate,
+        issueDate,
+        credentialId,
+        credentialUrl,
+        certFileUrl,
+      ]
+    );
+
+    const createdCert = {
+      id: certId,
       studentId,
       name,
       issuer,
-      year,
-    ]);
+      year: issueDate,
+      issueDate,
+      credentialId,
+      credentialUrl,
+      certificateFileUrl: certFileUrl,
+    };
 
     return res.status(201).json({
       success: true,
-      message: 'Certification added.',
-      certification: { id: certId, name, issuer, year },
+      message: 'Certification added successfully.',
+      certification: createdCert,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateCertification = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const existing = await query('SELECT * FROM certifications WHERE id = ? AND student_id = ?', [id, studentId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Certification not found or access denied.' });
+    }
+
+    const prev = existing[0];
+    const name = (req.body.name || req.body.certificationName || prev.name).trim();
+    const issuer = (req.body.issuer || req.body.issuingOrganization || prev.issuer).trim();
+    const issueDate = (req.body.issue_date !== undefined ? req.body.issue_date : (req.body.issueDate !== undefined ? req.body.issueDate : prev.issue_date || prev.year || '')).trim();
+    const credentialId = (req.body.credential_id !== undefined ? req.body.credential_id : (req.body.credentialId !== undefined ? req.body.credentialId : prev.credential_id || '')).trim();
+    const credentialUrl = (req.body.credential_url !== undefined ? req.body.credential_url : (req.body.credentialUrl !== undefined ? req.body.credentialUrl : prev.credential_url || '')).trim();
+
+    if (!name) return res.status(400).json({ success: false, message: 'Certification Name is required.' });
+    if (!issuer) return res.status(400).json({ success: false, message: 'Issuing Organization is required.' });
+
+    let certFileUrl = prev.certificate_file_url || '';
+    if (req.file) {
+      certFileUrl = `/uploads/certifications/${req.file.filename}`;
+      if (prev.certificate_file_url) {
+        deleteUploadedFile(prev.certificate_file_url);
+      }
+    }
+
+    await query(
+      `UPDATE certifications SET 
+        name = ?, 
+        issuer = ?, 
+        year = ?, 
+        issue_date = ?, 
+        credential_id = ?, 
+        credential_url = ?, 
+        certificate_file_url = ? 
+       WHERE id = ? AND student_id = ?`,
+      [
+        name,
+        issuer,
+        issueDate,
+        issueDate,
+        credentialId,
+        credentialUrl,
+        certFileUrl,
+        id,
+        studentId,
+      ]
+    );
+
+    const updatedCert = {
+      id,
+      studentId,
+      name,
+      issuer,
+      year: issueDate,
+      issueDate,
+      credentialId,
+      credentialUrl,
+      certificateFileUrl: certFileUrl,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: 'Certification updated successfully.',
+      certification: updatedCert,
     });
   } catch (error) {
     next(error);
@@ -292,9 +679,24 @@ const addCertification = async (req, res, next) => {
 
 const deleteCertification = async (req, res, next) => {
   try {
+    const userId = req.user.id;
     const { id } = req.params;
-    await query('DELETE FROM certifications WHERE id = ?', [id]);
-    return res.status(200).json({ success: true, message: 'Certification deleted.' });
+
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const existing = await query('SELECT * FROM certifications WHERE id = ? AND student_id = ?', [id, studentId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Certification not found or access denied.' });
+    }
+
+    if (existing[0].certificate_file_url) {
+      deleteUploadedFile(existing[0].certificate_file_url);
+    }
+
+    await query('DELETE FROM certifications WHERE id = ? AND student_id = ?', [id, studentId]);
+    return res.status(200).json({ success: true, message: 'Certification deleted successfully.' });
   } catch (error) {
     next(error);
   }
@@ -391,9 +793,13 @@ module.exports = {
   uploadAvatar,
   addSkill,
   deleteSkill,
+  getProjects,
   addProject,
+  updateProject,
   deleteProject,
+  getCertifications,
   addCertification,
+  updateCertification,
   deleteCertification,
   uploadStudentResume,
   downloadResume,

@@ -233,10 +233,16 @@ const query = async (sql, params = []) => {
     }
 
     if (sql.includes('FROM projects')) {
+      if (sql.includes('WHERE id = ? AND student_id = ?')) {
+        return (inMemoryDb.projects || []).filter((p) => p.id === params[0] && p.student_id === params[1]);
+      }
       return (inMemoryDb.projects || []).filter((p) => p.student_id === params[0]);
     }
 
     if (sql.includes('FROM certifications')) {
+      if (sql.includes('WHERE id = ? AND student_id = ?')) {
+        return (inMemoryDb.certifications || []).filter((c) => c.id === params[0] && c.student_id === params[1]);
+      }
       return (inMemoryDb.certifications || []).filter((c) => c.student_id === params[0]);
     }
 
@@ -333,14 +339,36 @@ const query = async (sql, params = []) => {
 
   if (cleanSql.startsWith('INSERT INTO PROJECTS')) {
     if (!inMemoryDb.projects) inMemoryDb.projects = [];
-    inMemoryDb.projects.push({ id: params[0], student_id: params[1], name: params[2], desc: params[3], stack: params[4], link: params[5] });
+    inMemoryDb.projects.push({
+      id: params[0],
+      student_id: params[1],
+      name: params[2],
+      desc: params[3],
+      stack: params[4],
+      link: params[5] || '',
+      github_url: params[6] || params[5] || '',
+      live_demo_url: params[7] || '',
+      start_date: params[8] || '',
+      end_date: params[9] || '',
+      image_url: params[10] || '',
+    });
     saveLocalDb();
     return { affectedRows: 1 };
   }
 
   if (cleanSql.startsWith('INSERT INTO CERTIFICATIONS')) {
     if (!inMemoryDb.certifications) inMemoryDb.certifications = [];
-    inMemoryDb.certifications.push({ id: params[0], student_id: params[1], name: params[2], issuer: params[3], year: params[4] });
+    inMemoryDb.certifications.push({
+      id: params[0],
+      student_id: params[1],
+      name: params[2],
+      issuer: params[3],
+      year: params[4] || '',
+      issue_date: params[5] || params[4] || '',
+      credential_id: params[6] || '',
+      credential_url: params[7] || '',
+      certificate_file_url: params[8] || '',
+    });
     saveLocalDb();
     return { affectedRows: 1 };
   }
@@ -428,6 +456,42 @@ const query = async (sql, params = []) => {
   if (cleanSql.startsWith('UPDATE RESUMES')) {
     const r = (inMemoryDb.resumes || []).find((item) => item.student_id === params[1]);
     if (r) r.parsed_content = params[0];
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
+  if (cleanSql.startsWith('UPDATE PROJECTS')) {
+    const projId = params[params.length - 2];
+    const studId = params[params.length - 1];
+    const p = (inMemoryDb.projects || []).find((item) => item.id === projId && item.student_id === studId);
+    if (p) {
+      p.name = params[0];
+      p.desc = params[1];
+      p.stack = params[2];
+      p.github_url = params[3];
+      p.live_demo_url = params[4];
+      p.start_date = params[5];
+      p.end_date = params[6];
+      if (params[7]) p.image_url = params[7];
+      p.link = params[3] || params[4] || p.link;
+    }
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
+  if (cleanSql.startsWith('UPDATE CERTIFICATIONS')) {
+    const certId = params[params.length - 2];
+    const studId = params[params.length - 1];
+    const c = (inMemoryDb.certifications || []).find((item) => item.id === certId && item.student_id === studId);
+    if (c) {
+      c.name = params[0];
+      c.issuer = params[1];
+      c.issue_date = params[2];
+      c.credential_id = params[3];
+      c.credential_url = params[4];
+      if (params[5]) c.certificate_file_url = params[5];
+      c.year = params[2] || c.year;
+    }
     saveLocalDb();
     return { affectedRows: 1 };
   }

@@ -1,4 +1,29 @@
 const { fetchAdzunaJobs, getCompanyDomain, getJobByIdFromStore } = require('../services/adzunaService');
+const { query } = require('../config/db');
+const { calculateAiJobMatch } = require('../utils/aiMatch');
+
+async function getStudentProfileForMatch(userId) {
+  if (!userId) return null;
+  try {
+    const students = await query('SELECT * FROM students WHERE user_id = ?', [userId]);
+    if (!students || students.length === 0) return null;
+    const student = students[0];
+
+    const skills = await query('SELECT name, level FROM skills WHERE student_id = ?', [student.id]);
+    const projects = await query('SELECT name, `desc`, stack FROM projects WHERE student_id = ?', [student.id]);
+    const certs = await query('SELECT name, issuer FROM certifications WHERE student_id = ?', [student.id]);
+
+    return {
+      cgpa: student.cgpa,
+      department: student.department,
+      skills,
+      projects,
+      certifications: certs,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Get All Live Jobs (with optional search, location, category, contractType, minMatch)
@@ -29,7 +54,21 @@ const getJobs = async (req, res, next) => {
       resultsPerPage: 50,
     });
 
-    let filtered = rawJobs.filter((j) => {
+    const studentProfile = await getStudentProfileForMatch(req.user?.id);
+
+    let filtered = rawJobs.map((j) => {
+      if (studentProfile) {
+        const aiResult = calculateAiJobMatch(studentProfile, j);
+        return {
+          ...j,
+          match: aiResult.matchScore,
+          matchReasons: aiResult.matchReasons,
+          matchedSkills: aiResult.matchedSkills,
+          missingSkills: aiResult.missingSkills,
+        };
+      }
+      return j;
+    }).filter((j) => {
       let matchesSearch = true;
       if (queryTerm) {
         const qt = queryTerm.toLowerCase();
@@ -96,10 +135,22 @@ const searchJobs = async (req, res, next) => {
 const getJobById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const job = await getJobByIdFromStore(id);
+    let job = await getJobByIdFromStore(id);
 
     if (!job) {
       return res.status(404).json({ success: false, message: 'Job not found' });
+    }
+
+    const studentProfile = await getStudentProfileForMatch(req.user?.id);
+    if (studentProfile) {
+      const aiResult = calculateAiJobMatch(studentProfile, job);
+      job = {
+        ...job,
+        match: aiResult.matchScore,
+        matchReasons: aiResult.matchReasons,
+        matchedSkills: aiResult.matchedSkills,
+        missingSkills: aiResult.missingSkills,
+      };
     }
 
     return res.status(200).json({

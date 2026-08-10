@@ -6,16 +6,20 @@ const {
   uploadAvatar: uploadAvatarController,
   addSkill,
   deleteSkill,
+  getProjects,
   addProject,
+  updateProject,
   deleteProject,
+  getCertifications,
   addCertification,
+  updateCertification,
   deleteCertification,
   uploadStudentResume,
   downloadResume,
 } = require('../controllers/studentController');
 
 const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
-const { uploadAvatar, uploadResume } = require('../middleware/uploadMiddleware');
+const { uploadAvatar, uploadResume, uploadProjectImage, uploadCertificateFile } = require('../middleware/uploadMiddleware');
 
 // All routes require authentication and student/officer role access
 router.use(verifyToken);
@@ -30,11 +34,15 @@ router.post('/skills', addSkill);
 router.delete('/skills/:id', deleteSkill);
 
 // Projects
-router.post('/projects', addProject);
+router.get('/projects', getProjects);
+router.post('/projects', uploadProjectImage.single('image'), addProject);
+router.put('/projects/:id', uploadProjectImage.single('image'), updateProject);
 router.delete('/projects/:id', deleteProject);
 
 // Certifications
-router.post('/certifications', addCertification);
+router.get('/certifications', getCertifications);
+router.post('/certifications', uploadCertificateFile.single('file'), addCertification);
+router.put('/certifications/:id', uploadCertificateFile.single('file'), updateCertification);
 router.delete('/certifications/:id', deleteCertification);
 
 // Resume Upload & Download

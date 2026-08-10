@@ -90,6 +90,7 @@ app.get('/api/company/:company/jobs', verifyToken, getCompanyJobs);
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/student', studentRoutes);
+app.use('/api/profile', studentRoutes);
 app.use('/api/recruiter', recruiterRoutes);
 app.use('/api/officer', officerRoutes);
 app.use('/api/jobs', jobRoutes);

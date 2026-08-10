@@ -75,6 +75,29 @@ const initDatabase = async () => {
     await connection.query(sqlContent);
     console.log('[DB INIT] Database tables created successfully.');
 
+    // Auto-migrate column additions if tables already existed
+    const alterQueries = [
+      'ALTER TABLE projects ADD COLUMN github_url VARCHAR(500) DEFAULT NULL',
+      'ALTER TABLE projects ADD COLUMN live_demo_url VARCHAR(500) DEFAULT NULL',
+      'ALTER TABLE projects ADD COLUMN start_date VARCHAR(50) DEFAULT NULL',
+      'ALTER TABLE projects ADD COLUMN end_date VARCHAR(50) DEFAULT NULL',
+      'ALTER TABLE projects ADD COLUMN image_url VARCHAR(500) DEFAULT NULL',
+      'ALTER TABLE projects ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+      'ALTER TABLE certifications ADD COLUMN issue_date VARCHAR(50) DEFAULT NULL',
+      'ALTER TABLE certifications ADD COLUMN credential_id VARCHAR(255) DEFAULT NULL',
+      'ALTER TABLE certifications ADD COLUMN credential_url VARCHAR(500) DEFAULT NULL',
+      'ALTER TABLE certifications ADD COLUMN certificate_file_url VARCHAR(500) DEFAULT NULL',
+      'ALTER TABLE certifications ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+    ];
+
+    for (const alterSql of alterQueries) {
+      try {
+        await connection.query(alterSql);
+      } catch (colErr) {
+        // Ignore column exists error
+      }
+    }
+
     // 3. Seed default users & records
     console.log('[DB INIT] Seeding initial data...');
     const hashedStudentPwd = await bcrypt.hash('password', 10);
