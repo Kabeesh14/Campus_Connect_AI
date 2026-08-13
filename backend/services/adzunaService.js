@@ -195,6 +195,8 @@ function formatAdzunaJob(raw, idx = 0) {
     });
   }
 
+  const categoryTag = raw.category?.tag || null;
+
   return {
     id: adzunaJobId,
     adzunaJobId: adzunaJobId,
@@ -208,24 +210,24 @@ function formatAdzunaJob(raw, idx = 0) {
     location: locationName,
     salaryMin,
     salaryMax,
+    salaryIsPredicted: salaryPredicted,
     salaryPredicted,
     package: salaryStr,
     salary: salaryStr,
-    description: rawDesc,
+    description: rawDesc || 'Description not available.',
     contractType,
     contractTime: raw.contract_time || contractType,
     type: typeLabel,
     remote: isRemote,
     category: categoryName,
+    categoryTag,
     redirectUrl,
-    created: createdDate,
+    created: raw.created || null,
     country: raw.country || 'in',
-    postedDays,
-    deadline: `${postedDays + 14} days left`,
+    postedDays: isNaN(postedDays) ? null : postedDays,
     skills: extractedSkills,
     requirements: matchedReqs,
     responsibilities: matchedResps,
-    eligibility: 'Degree in CS, IT, Engineering, or related discipline',
     originalAdzunaJob: raw,
   };
 }

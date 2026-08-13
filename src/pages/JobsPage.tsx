@@ -235,7 +235,7 @@ export function JobsPage() {
                         <p className="text-xs text-soft">Salary</p><p className="font-semibold">{j.package || j.salary || 'Salary Not Disclosed'}</p>
                       </div>
                       <div className="rounded-xl border border-base bg-soft/40 p-3">
-                        <p className="text-xs text-soft">Posted</p><p className="font-semibold">{j.postedDays !== undefined ? `${j.postedDays}d ago` : 'Recently'}</p>
+                        <p className="text-xs text-soft">Posted</p><p className="font-semibold">{j.created ? `${Math.max(0, Math.floor((Date.now() - new Date(j.created).getTime()) / (1000 * 60 * 60 * 24)))}d ago` : j.postedDays !== undefined && j.postedDays !== null ? `${j.postedDays}d ago` : 'Date unavailable'}</p>
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1.5">
@@ -327,6 +327,7 @@ export function JobDetailPage() {
 
   useEffect(() => {
     if (!id) return;
+    setJob(null); // Clear previous job state immediately to prevent stale details reuse
     setLoading(true);
     setFetchError(null);
     const requestedId = String(id);
@@ -566,16 +567,15 @@ export function JobDetailPage() {
               <h3 className="font-display text-lg font-semibold">Job Overview</h3>
               <div className="mt-4 space-y-3">
                 {[
-                  { icon: DollarSign, label: 'Package', value: job.package || job.salary || 'Salary Not Disclosed' },
-                  { icon: MapPin, label: 'Location', value: job.location },
+                  { icon: DollarSign, label: 'Salary', value: job.salary || job.package || 'Salary Not Disclosed' },
+                  { icon: MapPin, label: 'Location', value: job.location || 'Location Not Disclosed' },
                   { icon: Briefcase, label: 'Type', value: job.type || job.contractType || 'Full Time' },
-                  { icon: Building2, label: 'Eligibility', value: job.eligibility || 'Degree in CS / Engineering' },
-                  { icon: Calendar, label: 'Deadline', value: job.deadline || 'Apply Soon' },
-                  { icon: Clock, label: 'Posted', value: job.postedDays !== undefined ? `${job.postedDays} days ago` : 'Recently' },
+                  { icon: Building2, label: 'Category', value: job.category || 'Category Not Specified' },
+                  { icon: Clock, label: 'Posted Date', value: job.created ? new Date(job.created).toLocaleDateString() : job.postedDays !== undefined && job.postedDays !== null ? `${job.postedDays} days ago` : 'Posted date unavailable' },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between border-b border-base pb-3">
                     <span className="flex items-center gap-2 text-sm text-soft"><row.icon size={16} /> {row.label}</span>
-                    <span className="text-sm font-semibold">{row.value}</span>
+                    <span className="text-sm font-semibold text-right">{row.value}</span>
                   </div>
                 ))}
               </div>
