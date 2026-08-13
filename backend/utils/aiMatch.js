@@ -4,16 +4,19 @@
 function calculateAiJobMatch(student, job) {
   if (!job) {
     return {
-      matchScore: 80,
-      matchReasons: [],
+      matchScore: null,
+      matchReasons: ['No job data available'],
+      matchedSkills: [],
+      missingSkills: [],
     };
   }
 
-  const defaultMatchScore = job.match || 80;
   if (!student) {
     return {
-      matchScore: defaultMatchScore,
-      matchReasons: [],
+      matchScore: null,
+      matchReasons: ['Not enough profile data to compute AI match score'],
+      matchedSkills: [],
+      missingSkills: [],
     };
   }
 
@@ -23,7 +26,7 @@ function calculateAiJobMatch(student, job) {
   const jobSkills = (job.skills || []).map((s) => s.toLowerCase());
 
   const studentSkills = (student.skills || []).map((s) => (typeof s === 'string' ? s : s.name).toLowerCase());
-  
+
   const studentProjects = (student.projects || []).map((p) => {
     let stackArr = [];
     if (Array.isArray(p.stack)) {
@@ -48,7 +51,7 @@ function calculateAiJobMatch(student, job) {
     issuer: c.issuer || c.issuingOrganization || '',
   }));
 
-  let score = 50;
+  let score = 30; // Baseline starting score (varies dynamically per job)
   const matchReasons = [];
   const matchedSkillNames = new Set();
   const missingSkillNames = new Set();
@@ -63,19 +66,19 @@ function calculateAiJobMatch(student, job) {
   jobSkills.forEach((js) => {
     let isMatch = false;
     allStudentTech.forEach((st) => {
-      if (st.includes(js) || js.includes(st)) {
+      if (st && (st.includes(js) || js.includes(st))) {
         isMatch = true;
         matchedSkillNames.add(js.toUpperCase());
       }
     });
-    if (!isMatch && js.length > 2) {
+    if (!isMatch && js.length > 1) {
       missingSkillNames.add(js.toUpperCase());
     }
   });
 
   if (matchedSkillNames.size > 0) {
     const matchedArr = Array.from(matchedSkillNames);
-    score += Math.min(25, matchedArr.length * 6);
+    score += Math.min(36, matchedArr.length * 12);
     matchReasons.push(`Strong ${matchedArr.slice(0, 3).join(' and ')} match`);
   }
 
@@ -84,12 +87,11 @@ function calculateAiJobMatch(student, job) {
   studentProjects.forEach((proj) => {
     if (!proj.name) return;
     const projText = `${proj.name} ${proj.desc} ${proj.stack.join(' ')}`.toLowerCase();
-    
-    // Check if project technology or domain matches job skills or title
-    const techMatch = proj.stack.some((st) => 
+
+    const techMatch = proj.stack.some((st) =>
       st && (jobSkills.includes(st.toLowerCase()) || jobTitle.includes(st.toLowerCase()) || jobDesc.includes(st.toLowerCase()))
     );
-    const domainMatch = jobSkills.some((sk) => sk.length > 2 && projText.includes(sk)) ||
+    const domainMatch = (jobSkills.length > 0 && jobSkills.some((sk) => sk.length > 2 && projText.includes(sk))) ||
       (jobTitle.includes('data') && projText.includes('data')) ||
       (jobTitle.includes('sales') && projText.includes('sales')) ||
       (jobTitle.includes('web') && (projText.includes('react') || projText.includes('web') || projText.includes('html'))) ||
@@ -101,7 +103,7 @@ function calculateAiJobMatch(student, job) {
   });
 
   if (relevantProjects.length > 0) {
-    score += Math.min(15, relevantProjects.length * 8);
+    score += Math.min(20, relevantProjects.length * 10);
     matchReasons.push(`Your ${relevantProjects[0]} project is relevant`);
   }
 
@@ -110,7 +112,7 @@ function calculateAiJobMatch(student, job) {
   studentCerts.forEach((cert) => {
     if (!cert.name) return;
     const certText = `${cert.name} ${cert.issuer}`.toLowerCase();
-    const isRelevant = jobSkills.some((sk) => sk.length > 2 && certText.includes(sk)) ||
+    const isRelevant = (jobSkills.length > 0 && jobSkills.some((sk) => sk.length > 2 && certText.includes(sk))) ||
       jobTitle.split(/\s+/).some((w) => w.length > 3 && certText.includes(w)) ||
       (jobCategory && jobCategory.split(/\s+/).some((w) => w.length > 3 && certText.includes(w)));
 
@@ -120,7 +122,7 @@ function calculateAiJobMatch(student, job) {
   });
 
   if (relevantCerts.length > 0) {
-    score += Math.min(10, relevantCerts.length * 5);
+    score += Math.min(16, relevantCerts.length * 8);
     const c = relevantCerts[0];
     matchReasons.push(`Your certification in ${c.name}${c.issuer ? ` from ${c.issuer}` : ''} supports this role`);
   }
@@ -128,13 +130,21 @@ function calculateAiJobMatch(student, job) {
   // 4. CGPA & Academic Domain Matching
   if (student.cgpa) {
     const cgpaVal = parseFloat(student.cgpa);
-    if (cgpaVal >= 8.5) score += 5;
-    else if (cgpaVal >= 7.5) score += 3;
+    if (cgpaVal >= 8.5) {
+      score += 8;
+      matchReasons.push(`Strong academic performance (CGPA ${cgpaVal})`);
+    } else if (cgpaVal >= 7.5) {
+      score += 5;
+    } else if (cgpaVal >= 6.5) {
+      score += 3;
+    }
   }
 
   const dept = (student.department || '').toLowerCase();
-  if (dept.includes('computer') || dept.includes('cs') || dept.includes('it') || dept.includes('data')) {
-    if (jobCategory.includes('it') || jobTitle.includes('developer') || jobTitle.includes('engineer') || jobTitle.includes('analyst')) {
+  if (dept.includes('computer') || dept.includes('cs') || dept.includes('it') || dept.includes('data') || dept.includes('eng')) {
+    if (jobCategory.includes('it') || jobCategory.includes('tech') || jobTitle.includes('developer') || jobTitle.includes('engineer') || jobTitle.includes('analyst') || jobTitle.includes('software')) {
+      score += 15;
+    } else {
       score += 5;
     }
   }
@@ -145,7 +155,7 @@ function calculateAiJobMatch(student, job) {
     matchReasons.push(`Missing ${missingArr[0]} experience`);
   }
 
-  const finalMatchScore = Math.min(98, Math.max(55, score));
+  const finalMatchScore = Math.min(98, Math.max(30, score));
 
   return {
     matchScore: finalMatchScore,

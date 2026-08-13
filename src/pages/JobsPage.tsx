@@ -219,7 +219,13 @@ export function JobsPage() {
                       </button>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Badge variant="success"><Brain size={12} /> {j.match || 75}% match</Badge>
+                      {j.match != null ? (
+                        <Badge variant={j.match >= 80 ? 'success' : j.match >= 60 ? 'primary' : 'warning'}>
+                          <Brain size={12} /> {j.match}% match
+                        </Badge>
+                      ) : (
+                        <Badge variant="neutral"><Brain size={12} /> Not evaluated</Badge>
+                      )}
                       <Badge variant="primary">{j.type || 'Full Time'}</Badge>
                       {j.remote && <Badge variant="accent">Remote</Badge>}
                       {j.category && <Badge variant="neutral">{j.category}</Badge>}
@@ -423,7 +429,13 @@ export function JobDetailPage() {
                 />
                 <div className="flex-1">
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="success"><Brain size={12} /> {job.match || 75}% AI Match</Badge>
+                    {job.match != null ? (
+                      <Badge variant={job.match >= 80 ? 'success' : job.match >= 60 ? 'primary' : 'warning'}>
+                        <Brain size={12} /> {job.match}% AI Match
+                      </Badge>
+                    ) : (
+                      <Badge variant="neutral"><Brain size={12} /> Match Pending Profile</Badge>
+                    )}
                     <Badge variant="primary">{job.type || job.contractType || 'Full Time'}</Badge>
                     {job.remote && <Badge variant="accent">Remote</Badge>}
                     {job.category && <Badge variant="neutral">{job.category}</Badge>}
@@ -570,10 +582,18 @@ export function JobDetailPage() {
               <div className="relative">
                 <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Brain size={18} /> AI Match Analysis</div>
                 <div className="mt-4 flex items-center gap-4">
-                  <div className="font-display text-4xl font-bold gradient-text">{job.match || 75}%</div>
+                  <div className="font-display text-4xl font-bold gradient-text">
+                    {job.match != null ? `${job.match}%` : 'N/A'}
+                  </div>
                   <div className="flex-1">
-                    <ProgressBar value={job.match || 75} color={(job.match || 75) >= 85 ? 'success' : 'primary'} />
-                    <p className="mt-2 text-xs text-soft">{(job.match || 75) >= 85 ? 'Excellent match — high success probability' : 'Good match — consider applying'}</p>
+                    <ProgressBar value={job.match || 0} color={(job.match || 0) >= 80 ? 'success' : 'primary'} />
+                    <p className="mt-2 text-xs text-soft">
+                      {job.match != null
+                        ? job.match >= 80
+                          ? 'Excellent match — high success probability'
+                          : 'Moderate match — review role details'
+                        : 'Complete your student profile to view AI match score'}
+                    </p>
                   </div>
                 </div>
 

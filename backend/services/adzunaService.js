@@ -44,15 +44,55 @@ function getCompanyDomain(companyName) {
 }
 
 const SUPPORTED_SKILL_KEYWORDS = [
-  'Java', 'Python', 'SQL', 'Excel', 'Power BI', 'Tableau', 'React', 'Node.js',
-  'TypeScript', 'JavaScript', 'C#', 'C++', 'C', 'AWS', 'Azure', 'GCP',
-  'Docker', 'Kubernetes', 'Git', 'GitHub', 'Spring Boot', 'Django', 'Flask',
-  'TensorFlow', 'PyTorch', 'Machine Learning', 'Data Analysis', 'PostgreSQL',
-  'MySQL', 'MongoDB', 'Angular', 'Vue', 'Linux', 'REST API', 'Microservices',
-  'GraphQL', 'Spark', 'Kafka', 'Pandas', 'NumPy', 'DevOps', 'Jira', 'Agile',
-  'System Design', 'Flutter', 'Swift', 'Android', 'Cybersecurity', 'HTML',
-  'CSS', 'Tailwind',
+  'Java', 'Python', 'JavaScript', 'TypeScript', 'C++', 'C#', 'C',
+  'SQL', 'Excel', 'Power BI', 'Tableau', 'React', 'Angular', 'Vue',
+  'Node.js', 'Spring Boot', 'Django', 'Flask', 'AWS', 'Azure', 'GCP',
+  'Docker', 'Kubernetes', 'Git', 'GitHub', 'Machine Learning', 'Deep Learning',
+  'Data Science', 'Data Analysis', 'NLP', 'TensorFlow', 'PyTorch', 'Pandas',
+  'NumPy', 'Spark', 'Hadoop', 'Linux', 'REST API', 'MongoDB', 'MySQL',
+  'PostgreSQL', 'GraphQL', 'DevOps', 'Jira', 'Agile', 'System Design',
+  'Flutter', 'Swift', 'Android', 'Cybersecurity', 'HTML', 'CSS', 'Tailwind',
+  'Golang', 'Go', 'PHP', 'Ruby', 'R', 'Scala', 'Kotlin', 'Rust', 'Redis',
+  'Elasticsearch', 'K8s', 'CI/CD', 'Microservices',
 ];
+
+/**
+ * Centralized deterministic skill extraction function analyzing title & description
+ */
+function extractJobSkills(title = '', description = '') {
+  const combinedText = `${title} ${description}`.trim();
+  if (!combinedText) return [];
+
+  const textLower = combinedText.toLowerCase();
+  const foundSkills = [];
+
+  for (const skill of SUPPORTED_SKILL_KEYWORDS) {
+    const skLower = skill.toLowerCase();
+    let isFound = false;
+
+    if (skLower === 'c++') {
+      isFound = /c\+\+/i.test(textLower) || /\bcpp\b/i.test(textLower);
+    } else if (skLower === 'c#') {
+      isFound = /c#/i.test(textLower) || /\bcsharp\b/i.test(textLower);
+    } else if (skLower === 'c') {
+      isFound = /(?:^|[^a-z0-9])c(?:$|[^a-z0-9])/i.test(textLower);
+    } else if (skLower === 'go' || skLower === 'r') {
+      const regex = new RegExp(`(?:^|[^a-z0-9])${skLower}(?:$|[^a-z0-9])`, 'i');
+      isFound = regex.test(textLower);
+    } else if (/[^a-z0-9]/i.test(skLower)) {
+      isFound = textLower.includes(skLower);
+    } else {
+      const regex = new RegExp(`\\b${skLower}\\b`, 'i');
+      isFound = regex.test(textLower);
+    }
+
+    if (isFound && !foundSkills.includes(skill)) {
+      foundSkills.push(skill);
+    }
+  }
+
+  return foundSkills;
+}
 
 /**
  * Format raw Adzuna job object into standard application schema
@@ -101,7 +141,15 @@ function formatAdzunaJob(raw, idx = 0) {
   }
 
   const isRemote = rawDesc.toLowerCase().includes('remote') || rawTitle.toLowerCase().includes('remote') || locationName.toLowerCase().includes('remote');
-  const categoryName = (raw.category && raw.category.label ? raw.category.label : 'IT & Tech').trim();
+
+  // Extract category dynamically from Adzuna response (never hardcode "IT Jobs")
+  let categoryName = 'Category Not Specified';
+  if (typeof raw.category === 'string' && raw.category.trim()) {
+    categoryName = raw.category.trim();
+  } else if (raw.category && typeof raw.category === 'object') {
+    categoryName = (raw.category.label || raw.category.display_name || raw.category.tag || 'Category Not Specified').trim();
+  }
+
   const redirectUrl = raw.redirect_url || null;
   const createdDate = raw.created || new Date().toISOString();
 
@@ -111,11 +159,7 @@ function formatAdzunaJob(raw, idx = 0) {
   const postedDays = Math.max(0, Math.floor((nowTime - createdTime) / (1000 * 60 * 60 * 24)));
 
   // Extract skills dynamically based ONLY on actual presence in title or description
-  const extractedSkills = SUPPORTED_SKILL_KEYWORDS.filter((sk) => {
-    const escaped = sk.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-    return regex.test(rawTitle) || regex.test(rawDesc);
-  });
+  const extractedSkills = extractJobSkills(rawTitle, rawDesc);
 
   // Extract requirements & responsibilities sentences dynamically from actual description
   const sentences = rawDesc.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => s.length > 15);
@@ -126,6 +170,17 @@ function formatAdzunaJob(raw, idx = 0) {
   const matchedResps = sentences.filter((s) => respKeywords.some((k) => s.toLowerCase().includes(k))).slice(0, 5);
 
   const id = String(raw.id || `adzuna-${idx + 1}-${Date.now()}`);
+
+  if (idx === 0 && process.env.NODE_ENV !== 'production') {
+    console.log('[ADZUNA INSPECT FIRST JOB]', {
+      id,
+      title: rawTitle,
+      company: companyName,
+      descriptionLength: rawDesc.length,
+      category: categoryName,
+      extractedSkills,
+    });
+  }
 
   return {
     id,
@@ -318,5 +373,6 @@ module.exports = {
   formatAdzunaJob,
   getCompanyDomain,
   getJobByIdFromStore,
+  extractJobSkills,
   SUPPORTED_SKILL_KEYWORDS,
 };

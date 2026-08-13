@@ -86,11 +86,10 @@ const getJobs = async (req, res, next) => {
           missingSkills: aiResult.missingSkills,
         };
       }
-      // If unauthenticated or no student profile, default a baseline match score of 75
       return {
         ...j,
-        match: j.match || 75,
-        matchReasons: ['Default match estimate for profile'],
+        match: null,
+        matchReasons: ['Not enough profile data to compute AI match score'],
       };
     }).filter((j) => {
       let matchesSearch = true;
