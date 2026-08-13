@@ -159,14 +159,24 @@ const searchJobs = async (req, res, next) => {
 const getJobById = async (req, res, next) => {
   try {
     const { id } = req.params;
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[DETAILS REQUEST] Adzuna ID:', id);
+    }
     let job = await getJobByIdFromStore(id);
 
     if (!job) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[DETAILS NOT FOUND] Adzuna ID:', id);
+      }
       return res.status(404).json({
         success: false,
         source: 'adzuna',
         message: 'Job position not found or has expired on Adzuna.',
       });
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[DETAILS RESPONSE] Adzuna ID:', job.id || job.adzunaJobId, 'Title:', job.title, 'Company:', job.company);
     }
 
     const studentProfile = await getStudentProfileForMatch(req.user?.id);

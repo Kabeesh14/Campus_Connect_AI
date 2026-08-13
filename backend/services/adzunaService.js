@@ -95,6 +95,19 @@ function extractJobSkills(title = '', description = '') {
 }
 
 /**
+ * Generate stable, deterministic Adzuna Job ID
+ */
+function generateStableJobId(raw, idx = 0) {
+  if (raw.id) return String(raw.id);
+  const cleanCompany = (raw.company?.display_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanTitle = (raw.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanLoc = (raw.location?.display_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanCreated = String(raw.created || '').replace(/[^a-z0-9]/g, '');
+  const hash = `${cleanCompany}-${cleanTitle}-${cleanLoc}-${cleanCreated}`.slice(0, 80);
+  return hash ? `adzuna-${hash}` : `adzuna-job-${idx + 1}`;
+}
+
+/**
  * Format raw Adzuna job object into standard application schema
  */
 function formatAdzunaJob(raw, idx = 0) {
@@ -169,11 +182,11 @@ function formatAdzunaJob(raw, idx = 0) {
   const matchedReqs = sentences.filter((s) => reqKeywords.some((k) => s.toLowerCase().includes(k))).slice(0, 5);
   const matchedResps = sentences.filter((s) => respKeywords.some((k) => s.toLowerCase().includes(k))).slice(0, 5);
 
-  const id = String(raw.id || `adzuna-${idx + 1}-${Date.now()}`);
+  const adzunaJobId = generateStableJobId(raw, idx);
 
   if (idx === 0 && process.env.NODE_ENV !== 'production') {
     console.log('[ADZUNA INSPECT FIRST JOB]', {
-      id,
+      id: adzunaJobId,
       title: rawTitle,
       company: companyName,
       descriptionLength: rawDesc.length,
@@ -183,7 +196,8 @@ function formatAdzunaJob(raw, idx = 0) {
   }
 
   return {
-    id,
+    id: adzunaJobId,
+    adzunaJobId: adzunaJobId,
     source: 'adzuna',
     title: rawTitle,
     role: rawTitle,
@@ -199,6 +213,7 @@ function formatAdzunaJob(raw, idx = 0) {
     salary: salaryStr,
     description: rawDesc,
     contractType,
+    contractTime: raw.contract_time || contractType,
     type: typeLabel,
     remote: isRemote,
     category: categoryName,
@@ -211,6 +226,7 @@ function formatAdzunaJob(raw, idx = 0) {
     requirements: matchedReqs,
     responsibilities: matchedResps,
     eligibility: 'Degree in CS, IT, Engineering, or related discipline',
+    originalAdzunaJob: raw,
   };
 }
 
@@ -231,8 +247,8 @@ function saveJobsToStore(jobsList) {
  * Primary Adzuna API Fetcher (No Fake / Mock Fallbacks)
  */
 async function fetchAdzunaJobs({ what = '', where = '', country = 'in', page = 1, resultsPerPage = 50 } = {}) {
-  const appId = process.env.ADZUNA_APP_ID;
-  const appKey = process.env.ADZUNA_APP_KEY;
+  const appId = process.env.ADZUNA_APP_ID || '142eeeb0';
+  const appKey = process.env.ADZUNA_APP_KEY || 'b84c8be92cf357ed7cd18c26bb7a36cb';
 
   const cacheKey = `${country}_${page}_${what}_${where}`.toLowerCase();
   const cached = cacheMap.get(cacheKey);
@@ -254,94 +270,89 @@ async function fetchAdzunaJobs({ what = '', where = '', country = 'in', page = 1
     };
   }
 
-  const endpoint = `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?app_id=${encodeURIComponent(appId)}&app_key=${encodeURIComponent(appKey)}&results_per_page=${resultsPerPage}${what ? `&what=${encodeURIComponent(what)}` : ''}${where ? `&where=${encodeURIComponent(where)}` : ''}&content-type=application/json`;
+  const countriesToTry = Array.from(new Set([country, 'gb', 'us', 'in']));
 
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[ADZUNA] Requesting URL: https://api.adzuna.com/v1/api/jobs/${country}/search/${page} (query="${what}", where="${where}")`);
-  }
+  for (const targetCountry of countriesToTry) {
+    const endpoint = `https://api.adzuna.com/v1/api/jobs/${targetCountry}/search/${page}?app_id=${encodeURIComponent(appId)}&app_key=${encodeURIComponent(appKey)}&results_per_page=${resultsPerPage}${what ? `&what=${encodeURIComponent(what)}` : ''}${where ? `&where=${encodeURIComponent(where)}` : ''}&content-type=application/json`;
 
-  return new Promise((resolve) => {
-    const req = https.get(endpoint, { timeout: 8000 }, (res) => {
-      let body = '';
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[ADZUNA] Requesting URL: https://api.adzuna.com/v1/api/jobs/${targetCountry}/search/${page} (query="${what}", where="${where}")`);
+    }
 
-      if (res.statusCode !== 200) {
-        console.error(`[ADZUNA ERROR] HTTP ${res.statusCode} from Adzuna API`);
-        return resolve({
-          success: false,
-          source: 'adzuna',
-          message: `Adzuna API HTTP Error ${res.statusCode}`,
-          jobs: [],
-        });
-      }
+    const resObj = await new Promise((resolve) => {
+      const req = https.get(endpoint, { timeout: 8000 }, (res) => {
+        let body = '';
 
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(body);
-          if (parsed && Array.isArray(parsed.results)) {
-            const formatted = parsed.results.map((item, idx) => formatAdzunaJob(item, idx));
-            saveJobsToStore(formatted);
-            cacheMap.set(cacheKey, { timestamp: Date.now(), data: formatted });
+        if (res.statusCode !== 200) {
+          console.error(`[ADZUNA ERROR] HTTP ${res.statusCode} from Adzuna API (${targetCountry})`);
+          return resolve({ success: false, statusCode: res.statusCode });
+        }
 
-            if (process.env.NODE_ENV !== 'production' && formatted.length > 0) {
-              console.log('[ADZUNA LOG]', {
-                query: what,
-                country,
-                page,
-                results: formatted.length,
-                firstJobId: formatted[0].id,
-                firstJobTitle: formatted[0].title,
-                firstJobCompany: formatted[0].company,
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(body);
+            if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
+              const formatted = parsed.results.map((item, idx) => formatAdzunaJob(item, idx));
+              saveJobsToStore(formatted);
+              cacheMap.set(cacheKey, { timestamp: Date.now(), data: formatted });
+
+              if (process.env.NODE_ENV !== 'production' && formatted.length > 0) {
+                console.log('[ADZUNA LOG]', {
+                  query: what,
+                  country: targetCountry,
+                  page,
+                  results: formatted.length,
+                  firstJobId: formatted[0].id,
+                  firstJobTitle: formatted[0].title,
+                  firstJobCompany: formatted[0].company,
+                });
+              }
+
+              return resolve({
+                success: true,
+                source: 'adzuna',
+                jobs: formatted,
+                total: parsed.count || formatted.length,
               });
             }
 
             return resolve({
               success: true,
               source: 'adzuna',
-              jobs: formatted,
-              total: parsed.count || formatted.length,
+              jobs: [],
+              total: 0,
             });
+          } catch (e) {
+            console.error('[ADZUNA PARSE ERROR]', e.message);
+            return resolve({ success: false });
           }
+        });
+      });
 
-          return resolve({
-            success: true,
-            source: 'adzuna',
-            jobs: [],
-            total: 0,
-          });
-        } catch (e) {
-          console.error('[ADZUNA PARSE ERROR]', e.message);
-          return resolve({
-            success: false,
-            source: 'adzuna',
-            message: 'Failed to parse response from Adzuna API.',
-            jobs: [],
-          });
-        }
+      req.on('error', (err) => {
+        console.error('[ADZUNA NETWORK ERROR]', err.message);
+        return resolve({ success: false });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        console.error('[ADZUNA TIMEOUT] Request timed out after 8s.');
+        return resolve({ success: false });
       });
     });
 
-    req.on('error', (err) => {
-      console.error('[ADZUNA NETWORK ERROR]', err.message);
-      return resolve({
-        success: false,
-        source: 'adzuna',
-        message: `Adzuna network error: ${err.message}`,
-        jobs: [],
-      });
-    });
+    if (resObj && resObj.success && resObj.jobs && resObj.jobs.length > 0) {
+      return resObj;
+    }
+  }
 
-    req.on('timeout', () => {
-      req.destroy();
-      console.error('[ADZUNA TIMEOUT] Request timed out after 8s.');
-      return resolve({
-        success: false,
-        source: 'adzuna',
-        message: 'Adzuna API request timed out.',
-        jobs: [],
-      });
-    });
-  });
+  return {
+    success: false,
+    source: 'adzuna',
+    message: 'Unable to fetch jobs from Adzuna.',
+    jobs: [],
+  };
 }
 
 /**
@@ -350,19 +361,30 @@ async function fetchAdzunaJobs({ what = '', where = '', country = 'in', page = 1
 async function getJobByIdFromStore(id) {
   if (!id) return null;
   const strId = String(id);
+
+  // 1. Direct lookup in globalJobStore
   if (globalJobStore.has(strId)) {
     return globalJobStore.get(strId);
   }
 
-  // Fetch fresh batch from Adzuna to populate globalJobStore
-  const res = await fetchAdzunaJobs({ what: 'developer', resultsPerPage: 50 });
-  if (res.success && globalJobStore.has(strId)) {
-    return globalJobStore.get(strId);
+  // 2. Lookup in cacheMap entries
+  for (const cacheItem of cacheMap.values()) {
+    if (cacheItem && Array.isArray(cacheItem.data)) {
+      const found = cacheItem.data.find((j) => String(j.id) === strId || String(j.adzunaJobId) === strId);
+      if (found) {
+        globalJobStore.set(strId, found);
+        return found;
+      }
+    }
   }
 
-  const resAll = await fetchAdzunaJobs({ what: '', resultsPerPage: 50 });
-  if (resAll.success && globalJobStore.has(strId)) {
-    return globalJobStore.get(strId);
+  // 3. Fallback targeted Adzuna searches to locate and populate globalJobStore
+  const searchQueries = ['', 'developer', 'engineer', 'manager', 'analyst', 'software'];
+  for (const q of searchQueries) {
+    const res = await fetchAdzunaJobs({ what: q, resultsPerPage: 50 });
+    if (res.success && globalJobStore.has(strId)) {
+      return globalJobStore.get(strId);
+    }
   }
 
   return null;

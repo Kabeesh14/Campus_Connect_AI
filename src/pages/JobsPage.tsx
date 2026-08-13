@@ -267,9 +267,18 @@ export function JobsPage() {
                           Link Unavailable
                         </button>
                       )}
-                      <Link to={`/jobs/${j.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
+                      <button
+                        onClick={() => {
+                          const targetId = j.adzunaJobId || j.id;
+                          if (process.env.NODE_ENV !== 'production') {
+                            console.log('[DETAILS CLICK] Adzuna ID:', targetId, 'Title:', j.title);
+                          }
+                          navigate(`/jobs/${encodeURIComponent(targetId)}`);
+                        }}
+                        className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+                      >
                         Details <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
-                      </Link>
+                      </button>
                     </div>
                   </div>
                 </GlassCard>
@@ -320,18 +329,36 @@ export function JobDetailPage() {
     if (!id) return;
     setLoading(true);
     setFetchError(null);
-    apiRequest(`/jobs/${id}`)
+    const requestedId = String(id);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[DETAILS PAGE RENDER REQUEST] Adzuna ID:', requestedId);
+    }
+
+    apiRequest(`/jobs/${encodeURIComponent(requestedId)}`)
       .then((res) => {
         if (res.success && res.job) {
+          const returnedId = String(res.job.adzunaJobId || res.job.id);
+          // Safety Check: Ensure returned job ID matches requested ID
+          if (returnedId !== requestedId && !returnedId.includes(requestedId) && !requestedId.includes(returnedId)) {
+            console.error('[SAFETY CHECK FAILED] Requested ID:', requestedId, 'Returned ID:', returnedId);
+            setJob(null);
+            setFetchError('Unable to load the requested job (ID mismatch).');
+            return;
+          }
+
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[DETAILS PAGE RENDER SUCCESS] Adzuna ID:', returnedId, 'Title:', res.job.title, 'Company:', res.job.company);
+          }
           setJob(res.job);
         } else {
           setJob(null);
-          setFetchError(res.message || 'Job not found');
+          setFetchError(res.message || 'Job position not found or has expired on Adzuna.');
         }
       })
       .catch((err: unknown) => {
         setJob(null);
-        setFetchError((err as Error).message || 'Job not found');
+        setFetchError((err as Error).message || 'Unable to load the requested job');
       })
       .finally(() => setLoading(false));
   }, [id]);
