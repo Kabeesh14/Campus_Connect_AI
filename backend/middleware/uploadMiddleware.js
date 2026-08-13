@@ -10,10 +10,24 @@ const logosDir = path.join(uploadDir, 'logos');
 const projectsDir = path.join(uploadDir, 'projects');
 const certificationsDir = path.join(uploadDir, 'certifications');
 
-[uploadDir, avatarsDir, resumesDir, logosDir, projectsDir, certificationsDir].forEach((dir) => {
+const achievementsDir = path.join(uploadDir, 'achievements');
+
+[uploadDir, avatarsDir, resumesDir, logosDir, projectsDir, certificationsDir, achievementsDir].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+});
+
+// Storage Engine for Achievements Proof Files
+const achievementStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, achievementsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const uniqueName = `achievement-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+    cb(null, uniqueName);
+  },
 });
 
 // Storage Engine for Avatars
@@ -150,10 +164,17 @@ const uploadCertificateFile = multer({
   fileFilter: certFilter,
 });
 
+const uploadAchievementProof = multer({
+  storage: achievementStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: certFilter,
+});
+
 module.exports = {
   uploadAvatar,
   uploadResume,
   uploadLogo,
   uploadProjectImage,
   uploadCertificateFile,
+  uploadAchievementProof,
 };

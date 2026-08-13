@@ -63,6 +63,7 @@ const getProfile = async (req, res, next) => {
     const skills = await query('SELECT id, name, level, category FROM skills WHERE student_id = ? ORDER BY created_at ASC', [student.id]);
     const projects = await query('SELECT * FROM projects WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
     const certifications = await query('SELECT * FROM certifications WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
+    const achievements = await query('SELECT * FROM achievements WHERE student_id = ? ORDER BY created_at DESC', [student.id]);
     const resumes = await query('SELECT id, file_name, file_path, file_size, mime_type, uploaded_at FROM resumes WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1', [student.id]);
 
     const formattedProjects = projects.map((p) => {
@@ -104,9 +105,20 @@ const getProfile = async (req, res, next) => {
       createdAt: c.created_at,
     }));
 
-    // Calculate profile completion percentage (9 fields)
+    const formattedAchievements = achievements.map((a) => ({
+      id: a.id,
+      title: a.title,
+      description: a.description || '',
+      organization: a.organization || '',
+      achievementDate: a.achievement_date || '',
+      url: a.url || '',
+      proofUrl: a.proof_url || '',
+      createdAt: a.created_at,
+    }));
+
+    // Calculate profile completion percentage (10 fields)
     let completedFields = 0;
-    const totalFields = 9;
+    const totalFields = 10;
     if (student.name) completedFields++;
     if (student.headline) completedFields++;
     if (student.avatar) completedFields++;
@@ -115,6 +127,7 @@ const getProfile = async (req, res, next) => {
     if (skills.length > 0) completedFields++;
     if (formattedProjects.length > 0) completedFields++;
     if (formattedCerts.length > 0) completedFields++;
+    if (formattedAchievements.length > 0) completedFields++;
     if (resumes.length > 0) completedFields++;
     const completion = Math.min(100, Math.round((completedFields / totalFields) * 100));
 
@@ -138,6 +151,7 @@ const getProfile = async (req, res, next) => {
         skills,
         projects: formattedProjects,
         certifications: formattedCerts,
+        achievements: formattedAchievements,
         resume: resumes[0] || null,
       },
     });
@@ -703,6 +717,172 @@ const deleteCertification = async (req, res, next) => {
 };
 
 /**
+ * Achievements API & CRUD
+ */
+const getAchievements = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const achievements = await query('SELECT * FROM achievements WHERE student_id = ? ORDER BY created_at DESC', [studentId]);
+    const formatted = achievements.map((a) => ({
+      id: a.id,
+      title: a.title,
+      description: a.description || '',
+      organization: a.organization || '',
+      achievementDate: a.achievement_date || '',
+      url: a.url || '',
+      proofUrl: a.proof_url || '',
+      createdAt: a.created_at,
+    }));
+
+    return res.status(200).json({ success: true, achievements: formatted });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const addAchievement = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const title = (req.body.title || req.body.achievementTitle || '').trim();
+    const description = (req.body.description || req.body.desc || '').trim();
+    const organization = (req.body.organization || req.body.event || '').trim();
+    const achievementDate = (req.body.achievement_date || req.body.achievementDate || req.body.date || '').trim();
+    const url = (req.body.url || '').trim();
+
+    if (!title) {
+      return res.status(400).json({ success: false, message: 'Achievement Title is required.' });
+    }
+
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const proofUrl = req.file ? `/uploads/achievements/${req.file.filename}` : '';
+    const achievementId = 'ach-' + crypto.randomUUID();
+
+    await query(
+      `INSERT INTO achievements 
+        (id, student_id, title, description, organization, achievement_date, url, proof_url) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [achievementId, studentId, title, description, organization, achievementDate, url, proofUrl]
+    );
+
+    const newAchievement = {
+      id: achievementId,
+      studentId,
+      title,
+      description,
+      organization,
+      achievementDate,
+      url,
+      proofUrl,
+    };
+
+    return res.status(201).json({
+      success: true,
+      message: 'Achievement added successfully.',
+      achievement: newAchievement,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateAchievement = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const title = (req.body.title || req.body.achievementTitle || '').trim();
+    const description = (req.body.description || req.body.desc || '').trim();
+    const organization = (req.body.organization || req.body.event || '').trim();
+    const achievementDate = (req.body.achievement_date || req.body.achievementDate || req.body.date || '').trim();
+    const url = (req.body.url || '').trim();
+
+    if (!title) {
+      return res.status(400).json({ success: false, message: 'Achievement Title is required.' });
+    }
+
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const existing = await query('SELECT * FROM achievements WHERE id = ? AND student_id = ?', [id, studentId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Achievement not found or access denied.' });
+    }
+
+    const prev = existing[0];
+    let proofUrl = prev.proof_url || '';
+    if (req.file) {
+      proofUrl = `/uploads/achievements/${req.file.filename}`;
+      if (prev.proof_url) {
+        deleteUploadedFile(prev.proof_url);
+      }
+    }
+
+    await query(
+      `UPDATE achievements SET 
+        title = ?, 
+        description = ?, 
+        organization = ?, 
+        achievement_date = ?, 
+        url = ?, 
+        proof_url = ? 
+       WHERE id = ? AND student_id = ?`,
+      [title, description, organization, achievementDate, url, proofUrl, id, studentId]
+    );
+
+    const updatedAchievement = {
+      id,
+      studentId,
+      title,
+      description,
+      organization,
+      achievementDate,
+      url,
+      proofUrl,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: 'Achievement updated successfully.',
+      achievement: updatedAchievement,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteAchievement = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const students = await query('SELECT id FROM students WHERE user_id = ?', [userId]);
+    if (students.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+    const studentId = students[0].id;
+
+    const existing = await query('SELECT * FROM achievements WHERE id = ? AND student_id = ?', [id, studentId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Achievement not found or access denied.' });
+    }
+
+    if (existing[0].proof_url) {
+      deleteUploadedFile(existing[0].proof_url);
+    }
+
+    await query('DELETE FROM achievements WHERE id = ? AND student_id = ?', [id, studentId]);
+    return res.status(200).json({ success: true, message: 'Achievement deleted successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Resume Upload & Download
  */
 const uploadStudentResume = async (req, res, next) => {
@@ -801,6 +981,10 @@ module.exports = {
   addCertification,
   updateCertification,
   deleteCertification,
+  getAchievements,
+  addAchievement,
+  updateAchievement,
+  deleteAchievement,
   uploadStudentResume,
   downloadResume,
 };

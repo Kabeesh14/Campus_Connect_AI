@@ -34,14 +34,18 @@ interface CertItem {
   certificateFileUrl?: string;
 }
 
-interface ResumeInfo { id: string; fileName: string; filePath: string; fileSize: number; mimeType: string; uploadedAt?: string }
+interface AchievementItem {
+  id: string;
+  title: string;
+  description?: string;
+  organization?: string;
+  achievementDate?: string;
+  url?: string;
+  proofUrl?: string;
+  createdAt?: string;
+}
 
-const defaultAchievements = [
-  { title: 'Hackathon Winner', desc: 'Smart India Hackathon 2025', icon: Trophy },
-  { title: 'Top Coder', desc: 'Ranked 142 on LeetCode', icon: Code2 },
-  { title: "Dean's List", desc: 'Top 5% of department', icon: Award },
-  { title: 'Open Source', desc: '3 merged PRs to React', icon: Github },
-];
+interface ResumeInfo { id: string; fileName: string; filePath: string; fileSize: number; mimeType: string; uploadedAt?: string }
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
@@ -60,6 +64,7 @@ export default function ProfilePage() {
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [certifications, setCertifications] = useState<CertItem[]>([]);
+  const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [resume, setResume] = useState<ResumeInfo | null>(null);
 
   // Skill Modal States
@@ -95,6 +100,19 @@ export default function ProfilePage() {
   const [certError, setCertError] = useState<string | null>(null);
   const [certSubmitting, setCertSubmitting] = useState(false);
 
+  // Achievement Modal States
+  const [showAchievementModal, setShowAchievementModal] = useState(false);
+  const [editingAchievement, setEditingAchievement] = useState<AchievementItem | null>(null);
+  const [achTitle, setAchTitle] = useState('');
+  const [achDesc, setAchDesc] = useState('');
+  const [achOrg, setAchOrg] = useState('');
+  const [achDate, setAchDate] = useState('');
+  const [achUrl, setAchUrl] = useState('');
+  const [achProofFile, setAchProofFile] = useState<File | null>(null);
+  const [achProofFileName, setAchProofFileName] = useState<string | null>(null);
+  const [achError, setAchError] = useState<string | null>(null);
+  const [achSubmitting, setAchSubmitting] = useState(false);
+
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const resumeInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,6 +133,7 @@ export default function ProfilePage() {
           if (res.data.skills) setSkills(res.data.skills);
           if (res.data.projects) setProjects(res.data.projects);
           if (res.data.certifications) setCertifications(res.data.certifications);
+          if (res.data.achievements) setAchievements(res.data.achievements);
           if (res.data.resume) {
             setResume({
               id: res.data.resume.id,
@@ -408,6 +427,85 @@ export default function ProfilePage() {
       }
     } catch {
       setCertifications((prev) => prev.filter((c) => c.id !== id));
+    }
+  };
+
+  // Achievement Modal Handlers
+  const openAddAchievementModal = () => {
+    setEditingAchievement(null);
+    setAchTitle('');
+    setAchDesc('');
+    setAchOrg('');
+    setAchDate('');
+    setAchUrl('');
+    setAchProofFile(null);
+    setAchProofFileName(null);
+    setAchError(null);
+    setShowAchievementModal(true);
+  };
+
+  const openEditAchievementModal = (ach: AchievementItem) => {
+    setEditingAchievement(ach);
+    setAchTitle(ach.title || '');
+    setAchDesc(ach.description || '');
+    setAchOrg(ach.organization || '');
+    setAchDate(ach.achievementDate || '');
+    setAchUrl(ach.url || '');
+    setAchProofFile(null);
+    setAchProofFileName(ach.proofUrl ? 'Existing Certificate Uploaded' : null);
+    setAchError(null);
+    setShowAchievementModal(true);
+  };
+
+  const handleSaveAchievement = async () => {
+    setAchError(null);
+    if (!achTitle.trim()) {
+      setAchError('Achievement Title is required.');
+      return;
+    }
+
+    setAchSubmitting(true);
+    const formData = new FormData();
+    formData.append('title', achTitle.trim());
+    formData.append('description', achDesc.trim());
+    formData.append('organization', achOrg.trim());
+    formData.append('achievement_date', achDate.trim());
+    formData.append('url', achUrl.trim());
+    if (achProofFile) {
+      formData.append('proof', achProofFile);
+    }
+
+    try {
+      const endpoint = editingAchievement ? `/student/achievements/${editingAchievement.id}` : '/student/achievements';
+      const method = editingAchievement ? 'PUT' : 'POST';
+      const res = await apiRequest(endpoint, { method, body: formData });
+
+      if (res.success && res.achievement) {
+        if (editingAchievement) {
+          setAchievements((prev) => prev.map((a) => (a.id === editingAchievement.id ? res.achievement : a)));
+        } else {
+          setAchievements((prev) => [res.achievement, ...prev]);
+        }
+        setShowAchievementModal(false);
+      } else {
+        setAchError(res.message || 'Saving achievement failed. Please try again.');
+      }
+    } catch (err: unknown) {
+      setAchError((err as Error).message || 'Saving achievement failed. Please try again.');
+    } finally {
+      setAchSubmitting(false);
+    }
+  };
+
+  const handleDeleteAchievement = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this achievement?')) return;
+    try {
+      const res = await apiRequest(`/student/achievements/${id}`, { method: 'DELETE' });
+      if (res.success) {
+        setAchievements((prev) => prev.filter((a) => a.id !== id));
+      }
+    } catch {
+      setAchievements((prev) => prev.filter((a) => a.id !== id));
     }
   };
 
@@ -737,15 +835,79 @@ export default function ProfilePage() {
           {/* Achievements */}
           <Reveal delay={0.2}>
             <GlassCard>
-              <h3 className="font-display text-lg font-semibold">Achievements</h3>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                {defaultAchievements.map((a) => (
-                  <div key={a.title} className="rounded-xl border border-base bg-soft/40 p-3">
-                    <a.icon size={20} className="text-warning" />
-                    <p className="mt-2 text-sm font-semibold">{a.title}</p>
-                    <p className="text-xs text-soft">{a.desc}</p>
+              <div className="flex items-center justify-between">
+                <h3 className="font-display text-lg font-semibold">Achievements</h3>
+                <button onClick={openAddAchievementModal} className="rounded-lg border border-base bg-soft/40 p-2 text-soft transition-colors hover:text-primary">
+                  <Plus size={18} />
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                {achievements.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-base p-8 text-center">
+                    <div className="rounded-2xl bg-warning/10 p-3 text-warning">
+                      <Trophy size={24} />
+                    </div>
+                    <p className="mt-3 font-semibold">No achievements added yet</p>
+                    <p className="mt-1 text-xs text-soft">Highlight your awards, hackathons, open source contributions, or honors.</p>
+                    <button onClick={openAddAchievementModal} className="mt-4 flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-4 py-2 text-xs font-semibold text-white shadow-glow">
+                      <Plus size={16} /> Add Achievement
+                    </button>
                   </div>
-                ))}
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {achievements.map((a) => (
+                      <div key={a.id} className="group relative overflow-hidden rounded-2xl border border-base bg-soft/40 p-4 transition-all hover:border-primary/40">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="rounded-xl bg-warning/10 p-2.5 text-warning shrink-0">
+                              <Trophy size={20} />
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-sm truncate">{a.title}</h4>
+                              {a.organization && (
+                                <p className="text-xs text-primary font-medium mt-0.5">{a.organization}</p>
+                              )}
+                              {a.achievementDate && (
+                                <p className="text-[11px] text-soft mt-0.5">{a.achievementDate}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button onClick={() => openEditAchievementModal(a)} className="rounded-lg border border-base bg-soft/60 p-1.5 text-soft transition-colors hover:border-primary hover:text-primary">
+                              <Pencil size={13} />
+                            </button>
+                            <button onClick={() => handleDeleteAchievement(a.id)} className="rounded-lg border border-base bg-soft/60 p-1.5 text-soft transition-colors hover:border-danger hover:text-danger">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {a.description && (
+                          <p className="mt-3 text-xs leading-relaxed text-soft">{a.description}</p>
+                        )}
+
+                        <div className="mt-3 flex flex-wrap gap-2 pt-2 border-t border-base/40">
+                          {a.url && (
+                            <a href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                              <ExternalLink size={13} /> View Link
+                            </a>
+                          )}
+                          {a.proofUrl && (
+                            <>
+                              <a href={getMediaUrl(a.proofUrl)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-semibold text-success hover:underline">
+                                <Eye size={13} /> View Proof
+                              </a>
+                              <a href={getMediaUrl(a.proofUrl)} download className="flex items-center gap-1 text-xs font-semibold text-soft hover:text-primary hover:underline">
+                                <Download size={13} /> Download
+                              </a>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </GlassCard>
           </Reveal>
@@ -1031,6 +1193,113 @@ export default function ProfilePage() {
                   icon={certSubmitting ? <Loader2 className="animate-spin" size={18} /> : undefined}
                 >
                   {certSubmitting ? 'Saving Certification...' : editingCert ? 'Update Certification' : 'Add Certification'}
+                </GradientButton>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Add / Edit Achievement Modal */}
+      <AnimatePresence>
+        {showAchievementModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setShowAchievementModal(false)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl glass-strong p-6 shadow-soft-lg">
+              <div className="flex items-center justify-between pb-4 border-b border-base">
+                <h3 className="font-display text-lg font-semibold">
+                  {editingAchievement ? 'Edit Achievement' : 'Add New Achievement'}
+                </h3>
+                <button onClick={() => setShowAchievementModal(false)} className="text-soft hover:text-[rgb(var(--text))]">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {achError && (
+                <div className="mt-4 rounded-xl border border-danger/30 bg-danger/10 p-3 text-xs font-semibold text-danger">
+                  {achError}
+                </div>
+              )}
+
+              <div className="mt-4 space-y-4 text-sm">
+                <div>
+                  <label className="block text-xs font-semibold text-soft mb-1">Achievement Title *</label>
+                  <input
+                    value={achTitle}
+                    onChange={(e) => setAchTitle(e.target.value)}
+                    placeholder="e.g. Hackathon Winner / Open Source Contributor"
+                    className="w-full rounded-xl border border-base bg-soft/50 px-4 py-2.5 outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-soft mb-1">Organization / Event (Optional)</label>
+                  <input
+                    value={achOrg}
+                    onChange={(e) => setAchOrg(e.target.value)}
+                    placeholder="e.g. Smart India Hackathon / LeetCode / College TechFest"
+                    className="w-full rounded-xl border border-base bg-soft/50 px-4 py-2.5 outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-soft mb-1">Date (Optional)</label>
+                  <input
+                    value={achDate}
+                    onChange={(e) => setAchDate(e.target.value)}
+                    placeholder="e.g. 2026-07-15 or July 2026"
+                    className="w-full rounded-xl border border-base bg-soft/50 px-4 py-2.5 text-xs outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-soft mb-1">Description (Optional)</label>
+                  <textarea
+                    rows={3}
+                    value={achDesc}
+                    onChange={(e) => setAchDesc(e.target.value)}
+                    placeholder="Brief description of your accomplishment..."
+                    className="w-full rounded-xl border border-base bg-soft/50 px-4 py-2.5 outline-none focus:border-primary resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-soft mb-1">Verification URL (Optional)</label>
+                  <input
+                    value={achUrl}
+                    onChange={(e) => setAchUrl(e.target.value)}
+                    placeholder="https://hackathon.com/winners/..."
+                    className="w-full rounded-xl border border-base bg-soft/50 px-4 py-2.5 text-xs outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-soft mb-1">Certificate / Proof File (Optional)</label>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.webp"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setAchProofFile(file);
+                        setAchProofFileName(file.name);
+                      }
+                    }}
+                    className="w-full rounded-xl border border-base bg-soft/50 px-3 py-2 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-warning/20 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-warning hover:file:bg-warning/30"
+                  />
+                  {achProofFileName && (
+                    <p className="mt-1 text-xs text-warning font-medium flex items-center gap-1">
+                      <FileCheck size={14} /> Attached: {achProofFileName}
+                    </p>
+                  )}
+                </div>
+
+                <GradientButton
+                  onClick={handleSaveAchievement}
+                  disabled={achSubmitting}
+                  className="w-full py-3 mt-4"
+                  icon={achSubmitting ? <Loader2 className="animate-spin" size={18} /> : undefined}
+                >
+                  {achSubmitting ? 'Saving Achievement...' : editingAchievement ? 'Update Achievement' : 'Add Achievement'}
                 </GradientButton>
               </div>
             </motion.div>

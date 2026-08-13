@@ -246,6 +246,13 @@ const query = async (sql, params = []) => {
       return (inMemoryDb.certifications || []).filter((c) => c.student_id === params[0]);
     }
 
+    if (sql.includes('FROM achievements')) {
+      if (sql.includes('WHERE id = ? AND student_id = ?')) {
+        return (inMemoryDb.achievements || []).filter((a) => a.id === params[0] && a.student_id === params[1]);
+      }
+      return (inMemoryDb.achievements || []).filter((a) => a.student_id === params[0]);
+    }
+
     if (sql.includes('FROM resumes')) {
       return (inMemoryDb.resumes || []).filter((r) => r.student_id === params[0]);
     }
@@ -368,6 +375,23 @@ const query = async (sql, params = []) => {
       credential_id: params[6] || '',
       credential_url: params[7] || '',
       certificate_file_url: params[8] || '',
+    });
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
+  if (cleanSql.startsWith('INSERT INTO ACHIEVEMENTS')) {
+    if (!inMemoryDb.achievements) inMemoryDb.achievements = [];
+    inMemoryDb.achievements.push({
+      id: params[0],
+      student_id: params[1],
+      title: params[2],
+      description: params[3] || '',
+      organization: params[4] || '',
+      achievement_date: params[5] || '',
+      url: params[6] || '',
+      proof_url: params[7] || '',
+      created_at: new Date().toISOString(),
     });
     saveLocalDb();
     return { affectedRows: 1 };
@@ -496,6 +520,22 @@ const query = async (sql, params = []) => {
     return { affectedRows: 1 };
   }
 
+  if (cleanSql.startsWith('UPDATE ACHIEVEMENTS')) {
+    const achId = params[params.length - 2];
+    const studId = params[params.length - 1];
+    const a = (inMemoryDb.achievements || []).find((item) => item.id === achId && item.student_id === studId);
+    if (a) {
+      a.title = params[0];
+      a.description = params[1];
+      a.organization = params[2];
+      a.achievement_date = params[3];
+      a.url = params[4];
+      if (params[5]) a.proof_url = params[5];
+    }
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
   if (cleanSql.startsWith('UPDATE NOTIFICATIONS')) {
     const userId = params[0];
     (inMemoryDb.notifications || []).forEach((n) => { if (n.user_id === userId) n.read_status = 1; });
@@ -517,6 +557,12 @@ const query = async (sql, params = []) => {
 
   if (cleanSql.startsWith('DELETE FROM CERTIFICATIONS')) {
     inMemoryDb.certifications = (inMemoryDb.certifications || []).filter((c) => c.id !== params[0]);
+    saveLocalDb();
+    return { affectedRows: 1 };
+  }
+
+  if (cleanSql.startsWith('DELETE FROM ACHIEVEMENTS')) {
+    inMemoryDb.achievements = (inMemoryDb.achievements || []).filter((a) => a.id !== params[0]);
     saveLocalDb();
     return { affectedRows: 1 };
   }

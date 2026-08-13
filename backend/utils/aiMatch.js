@@ -51,6 +51,12 @@ function calculateAiJobMatch(student, job) {
     issuer: c.issuer || c.issuingOrganization || '',
   }));
 
+  const studentAchs = (student.achievements || []).map((a) => ({
+    title: a.title || '',
+    desc: a.description || a.desc || '',
+    org: a.organization || a.event || '',
+  }));
+
   let score = 30; // Baseline starting score (varies dynamically per job)
   const matchReasons = [];
   const matchedSkillNames = new Set();
@@ -125,6 +131,26 @@ function calculateAiJobMatch(student, job) {
     score += Math.min(16, relevantCerts.length * 8);
     const c = relevantCerts[0];
     matchReasons.push(`Your certification in ${c.name}${c.issuer ? ` from ${c.issuer}` : ''} supports this role`);
+  }
+
+  // 3b. Achievement Relevance Matching
+  const relevantAchs = [];
+  studentAchs.forEach((ach) => {
+    if (!ach.title) return;
+    const achText = `${ach.title} ${ach.desc} ${ach.org}`.toLowerCase();
+    const isRelevant = (jobSkills.length > 0 && jobSkills.some((sk) => sk.length > 2 && achText.includes(sk))) ||
+      jobTitle.split(/\s+/).some((w) => w.length > 3 && achText.includes(w)) ||
+      (jobCategory && jobCategory.split(/\s+/).some((w) => w.length > 3 && achText.includes(w)));
+
+    if (isRelevant) {
+      relevantAchs.push(ach);
+    }
+  });
+
+  if (relevantAchs.length > 0) {
+    score += Math.min(12, relevantAchs.length * 6);
+    const a = relevantAchs[0];
+    matchReasons.push(`Your achievement in "${a.title}" supports this role`);
   }
 
   // 4. CGPA & Academic Domain Matching

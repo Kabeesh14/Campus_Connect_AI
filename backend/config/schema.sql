@@ -227,6 +227,23 @@ CREATE TABLE IF NOT EXISTS `certifications` (
   CONSTRAINT `fk_certifications_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 11b. Achievements Table
+CREATE TABLE IF NOT EXISTS `achievements` (
+  `id` VARCHAR(36) NOT NULL,
+  `student_id` VARCHAR(36) NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `description` TEXT DEFAULT NULL,
+  `organization` VARCHAR(255) DEFAULT NULL,
+  `achievement_date` VARCHAR(50) DEFAULT NULL,
+  `url` VARCHAR(500) DEFAULT NULL,
+  `proof_url` VARCHAR(500) DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_achievements_student` (`student_id`),
+  CONSTRAINT `fk_achievements_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 12. Resumes Table
 CREATE TABLE IF NOT EXISTS `resumes` (
   `id` VARCHAR(36) NOT NULL,
