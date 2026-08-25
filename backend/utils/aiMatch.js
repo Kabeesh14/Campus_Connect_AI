@@ -1,4 +1,31 @@
 /**
+ * Normalize skill string for accurate alias comparison
+ */
+function normalizeSkillName(rawSkill = '') {
+  let clean = String(rawSkill).trim().toLowerCase();
+  if (!clean) return '';
+
+  const aliasMap = {
+    js: 'javascript',
+    ts: 'typescript',
+    node: 'node.js',
+    nodejs: 'node.js',
+    expressjs: 'express',
+    powerbi: 'power bi',
+    postgres: 'postgresql',
+    ml: 'machine learning',
+    dl: 'deep learning',
+    ai: 'artificial intelligence',
+    reactjs: 'react',
+    vuejs: 'vue',
+    angularjs: 'angular',
+    py: 'python',
+  };
+
+  return aliasMap[clean] || clean;
+}
+
+/**
  * Dynamic AI Match Engine for Student Profile vs Job Posting
  * Strictly calculates score based on intersection of student skills vs job skills
  */
@@ -23,8 +50,13 @@ function calculateAiJobMatch(student, job) {
     };
   }
 
+  // 1. Resume Extracted Skills
+  const studentResumeSkills = Array.isArray(student.resumeSkills) ? student.resumeSkills : [];
+
+  // 2. Profile Manual Skills
   const studentSkillsRaw = (student.skills || []).map((s) => (typeof s === 'string' ? s : s.name || ''));
 
+  // 3. Project Stack Skills
   const studentProjectSkills = (student.projects || []).flatMap((p) => {
     if (Array.isArray(p.stack)) return p.stack;
     if (typeof p.stack === 'string') {
@@ -38,11 +70,13 @@ function calculateAiJobMatch(student, job) {
     return [];
   });
 
+  // 4. Certification Skills
   const studentCertSkills = (student.certifications || []).map((c) => c.name || c.certificationName || '');
 
+  // Combine and normalize all student skills into a deduplicated Set
   const allStudentSkillsSet = new Set(
-    [...studentSkillsRaw, ...studentProjectSkills, ...studentCertSkills]
-      .map((s) => String(s).trim().toLowerCase())
+    [...studentResumeSkills, ...studentSkillsRaw, ...studentProjectSkills, ...studentCertSkills]
+      .map((s) => normalizeSkillName(s))
       .filter(Boolean)
   );
 
@@ -50,11 +84,11 @@ function calculateAiJobMatch(student, job) {
   const missingSkillNames = [];
 
   jobSkills.forEach((js) => {
-    const jsLower = js.toLowerCase();
+    const jsNormalized = normalizeSkillName(js);
     let isMatched = false;
 
     allStudentSkillsSet.forEach((st) => {
-      if (st && (st.includes(jsLower) || jsLower.includes(st))) {
+      if (st && (st === jsNormalized || st.includes(jsNormalized) || jsNormalized.includes(st))) {
         isMatched = true;
       }
     });
@@ -77,6 +111,17 @@ function calculateAiJobMatch(student, job) {
     matchReasons.push(`Missing experience in ${missingSkillNames.slice(0, 2).join(', ')}`);
   }
 
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[MATCH CALCULATION]', {
+      jobId: job.id || job.adzunaJobId,
+      jobTitle: job.title,
+      studentSkillsCount: allStudentSkillsSet.size,
+      jobSkillsCount: jobSkills.length,
+      matchedSkillsCount: matchedSkillNames.length,
+      matchScore,
+    });
+  }
+
   return {
     matchScore,
     matchReasons,
@@ -85,4 +130,4 @@ function calculateAiJobMatch(student, job) {
   };
 }
 
-module.exports = { calculateAiJobMatch };
+module.exports = { calculateAiJobMatch, normalizeSkillName };

@@ -1,4 +1,4 @@
-const { fetchAdzunaJobs, getCompanyDomain, getJobByIdFromStore } = require('../services/adzunaService');
+const { fetchAdzunaJobs, getCompanyDomain, getJobByIdFromStore, extractJobSkills } = require('../services/adzunaService');
 const { query } = require('../config/db');
 const { calculateAiJobMatch } = require('../utils/aiMatch');
 
@@ -12,15 +12,24 @@ async function getStudentProfileForMatch(userId) {
     const skills = await query('SELECT name, level FROM skills WHERE student_id = ?', [student.id]);
     const projects = await query('SELECT name, `desc`, stack FROM projects WHERE student_id = ?', [student.id]);
     const certs = await query('SELECT name, issuer FROM certifications WHERE student_id = ?', [student.id]);
+    const resumes = await query('SELECT parsed_content FROM resumes WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1', [student.id]);
+
+    const resumeText = resumes.length > 0 ? (resumes[0].parsed_content || '') : '';
+    const resumeSkills = resumeText ? extractJobSkills('', resumeText) : [];
 
     return {
+      studentId: student.id,
       cgpa: student.cgpa,
       department: student.department,
       skills,
       projects,
       certifications: certs,
+      resumeText,
+      resumeSkills,
+      hasParsedResume: Boolean(resumeText),
     };
-  } catch {
+  } catch (err) {
+    console.error('[getStudentProfileForMatch Error]', err.message);
     return null;
   }
 }

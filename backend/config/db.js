@@ -427,7 +427,7 @@ const query = async (sql, params = []) => {
 
   if (cleanSql.startsWith('INSERT INTO RESUMES')) {
     const newResume = {
-      id: params[0], student_id: params[1], file_name: params[2], file_path: params[3], file_size: params[4], mime_type: params[5], uploaded_at: new Date().toISOString(),
+      id: params[0], student_id: params[1], file_name: params[2], file_path: params[3], file_size: params[4], mime_type: params[5], parsed_content: params[6] || null, uploaded_at: new Date().toISOString(),
     };
     if (!inMemoryDb.resumes) inMemoryDb.resumes = [];
     inMemoryDb.resumes.push(newResume);

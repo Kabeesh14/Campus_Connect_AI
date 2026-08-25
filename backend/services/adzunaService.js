@@ -44,16 +44,33 @@ function getCompanyDomain(companyName) {
 }
 
 const SUPPORTED_SKILL_KEYWORDS = [
+  // Tech & Software Development
   'Java', 'Python', 'JavaScript', 'TypeScript', 'C++', 'C#', 'C',
-  'SQL', 'Excel', 'Power BI', 'Tableau', 'React', 'Angular', 'Vue',
-  'Node.js', 'Spring Boot', 'Django', 'Flask', 'AWS', 'Azure', 'GCP',
-  'Docker', 'Kubernetes', 'Git', 'GitHub', 'Machine Learning', 'Deep Learning',
-  'Data Science', 'Data Analysis', 'NLP', 'TensorFlow', 'PyTorch', 'Pandas',
-  'NumPy', 'Spark', 'Hadoop', 'Linux', 'REST API', 'MongoDB', 'MySQL',
-  'PostgreSQL', 'GraphQL', 'DevOps', 'Jira', 'Agile', 'System Design',
-  'Flutter', 'Swift', 'Android', 'Cybersecurity', 'HTML', 'CSS', 'Tailwind',
-  'Golang', 'Go', 'PHP', 'Ruby', 'R', 'Scala', 'Kotlin', 'Rust', 'Redis',
-  'Elasticsearch', 'K8s', 'CI/CD', 'Microservices',
+  'SQL', 'MySQL', 'PostgreSQL', 'MongoDB', 'GraphQL', 'REST API',
+  'React', 'Angular', 'Vue', 'Node.js', 'Express', 'Spring Boot', 'Spring', 'Django', 'Flask',
+  'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Git', 'GitHub', 'Linux',
+  'HTML', 'CSS', 'Tailwind', 'DevOps', 'Jira', 'Agile', 'System Design',
+  'Flutter', 'Swift', 'Android', 'Cybersecurity', 'Golang', 'Go', 'PHP', 'Ruby', 'R', 'Scala', 'Kotlin', 'Rust', 'Redis',
+  'Elasticsearch', 'CI/CD', 'Microservices',
+
+  // Data & Analytics
+  'Excel', 'Power BI', 'Tableau', 'Pandas', 'NumPy', 'Scikit-learn', 'TensorFlow', 'PyTorch',
+  'Machine Learning', 'Deep Learning', 'Statistics', 'Data Analysis', 'Data Visualization', 'ETL', 'Data Engineering', 'NLP', 'Spark', 'Hadoop',
+
+  // Business & Management
+  'Business Analysis', 'Business Intelligence', 'Requirements Analysis', 'Product Management', 'Project Management', 'Operations', 'Supply Chain', 'ERP', 'CRM', 'Scrum',
+
+  // Finance & Accounting
+  'Financial Analysis', 'Accounting', 'Financial Modeling', 'SAP', 'Tally', 'Taxation', 'Auditing', 'Budgeting',
+
+  // Marketing & Sales
+  'Digital Marketing', 'SEO', 'SEM', 'Google Analytics', 'Content Marketing', 'Social Media Marketing', 'Copywriting', 'Email Marketing', 'Brand Management',
+
+  // Design
+  'Figma', 'Adobe Photoshop', 'Adobe Illustrator', 'UI/UX', 'Graphic Design', 'User Experience', 'User Interface', 'Wireframing', 'Prototyping',
+
+  // HR & Administration
+  'Recruitment', 'Talent Acquisition', 'Human Resources', 'Payroll', 'Employee Relations',
 ];
 
 /**
@@ -75,14 +92,18 @@ function extractJobSkills(title = '', description = '') {
     } else if (skLower === 'c#') {
       isFound = /c#/i.test(textLower) || /\bcsharp\b/i.test(textLower);
     } else if (skLower === 'c') {
-      isFound = /(?:^|[^a-z0-9])c(?:$|[^a-z0-9])/i.test(textLower);
-    } else if (skLower === 'go' || skLower === 'r') {
-      const regex = new RegExp(`(?:^|[^a-z0-9])${skLower}(?:$|[^a-z0-9])`, 'i');
-      isFound = regex.test(textLower);
+      // Strict contextual matching for C language (never match random prose 'c' or 'c/o')
+      isFound = /\b(c\s+programming|c\s+language|c\s+developer|c\/c\+\+|embedded\s+c|ansi\s+c|c\s+coding)\b/i.test(textLower);
+    } else if (skLower === 'r') {
+      // Strict contextual matching for R language (never match 'R & D' or random 'r')
+      isFound = /\b(r\s+programming|r\s+language|r\s+developer|rstudio|r\s+stats|r\/python|python\s+and\s+r|r\s+and\s+python|r\s+analytics)\b/i.test(textLower);
+    } else if (skLower === 'go') {
+      // Strict contextual matching for Go language
+      isFound = /\b(golang|go\s+programming|go\s+language|go\s+developer|go\s+backend)\b/i.test(textLower);
     } else if (/[^a-z0-9]/i.test(skLower)) {
       isFound = textLower.includes(skLower);
     } else {
-      const regex = new RegExp(`\\b${skLower}\\b`, 'i');
+      const regex = new RegExp(`\\b${skLower.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}\\b`, 'i');
       isFound = regex.test(textLower);
     }
 

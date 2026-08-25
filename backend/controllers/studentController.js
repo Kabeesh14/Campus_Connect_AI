@@ -1,7 +1,27 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const pdfParseModule = require('pdf-parse');
+const mammoth = require('mammoth');
 const { query, withTransaction } = require('../config/db');
+const { extractJobSkills } = require('../services/adzunaService');
+
+const parsePdfBuffer = async (buffer) => {
+  if (typeof pdfParseModule === 'function') {
+    return await pdfParseModule(buffer);
+  }
+  if (pdfParseModule && typeof pdfParseModule.default === 'function') {
+    return await pdfParseModule.default(buffer);
+  }
+  if (pdfParseModule && typeof pdfParseModule.pdfParse === 'function') {
+    return await pdfParseModule.pdfParse(buffer);
+  }
+  if (typeof pdfParseModule.PDFParser === 'function') {
+    const parser = new pdfParseModule.PDFParser();
+    return await parser.parseBuffer(buffer);
+  }
+  return { text: buffer.toString('utf8').replace(/[^\x20-\x7E\n\r\t]/g, ' ') };
+};
 
 const normalizeAvatarPath = (avatarStr) => {
   const fallback = 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=200';
@@ -898,6 +918,51 @@ const uploadStudentResume = async (req, res, next) => {
 
     const resumeId = 'rs-' + crypto.randomUUID();
     const filePath = `/uploads/resumes/${req.file.filename}`;
+    const absoluteFilePath = path.resolve(__dirname, '..', 'uploads', 'resumes', req.file.filename);
+
+    let extractedText = '';
+
+    try {
+      const dataBuffer = fs.readFileSync(absoluteFilePath);
+      const filenameLower = (req.file.originalname || '').toLowerCase();
+      const mimeTypeLower = (req.file.mimetype || '').toLowerCase();
+
+      if (mimeTypeLower.includes('pdf') || filenameLower.endsWith('.pdf')) {
+        const parsedPdf = await parsePdfBuffer(dataBuffer);
+        extractedText = (parsedPdf.text || '').trim();
+      } else if (mimeTypeLower.includes('word') || mimeTypeLower.includes('document') || filenameLower.endsWith('.docx') || filenameLower.endsWith('.doc')) {
+        const parsedDocx = await mammoth.extractRawText({ buffer: dataBuffer });
+        extractedText = (parsedDocx.value || '').trim();
+      } else {
+        extractedText = dataBuffer.toString('utf8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').trim();
+      }
+    } catch (parseErr) {
+      console.error('[Resume Parsing Error]', parseErr);
+      return res.status(422).json({
+        success: false,
+        message: `Failed to parse resume document: ${parseErr.message}. Please ensure the file is not encrypted or corrupted.`,
+      });
+    }
+
+    if (!extractedText || extractedText.length < 10) {
+      return res.status(422).json({
+        success: false,
+        message: 'Could not extract readable text from the uploaded file. Please ensure it contains selectable text and is not a scanned image PDF.',
+      });
+    }
+
+    const normalizedText = extractedText.replace(/\s+/g, ' ').trim();
+    const extractedSkills = extractJobSkills('', normalizedText);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[RESUME PARSE SUCCESS]', {
+        studentId,
+        resumeId,
+        textLength: normalizedText.length,
+        extractedSkillsCount: extractedSkills.length,
+        extractedSkills,
+      });
+    }
 
     // Locate previous resume files and safely delete them from server disk
     try {
@@ -906,7 +971,7 @@ const uploadStudentResume = async (req, res, next) => {
         if (oldResume.file_path) {
           const relativePath = oldResume.file_path.replace(/^[/\\]+/, '');
           const absoluteOldPath = path.resolve(__dirname, '..', relativePath);
-          if (fs.existsSync(absoluteOldPath)) {
+          if (fs.existsSync(absoluteOldPath) && absoluteOldPath !== absoluteFilePath) {
             fs.unlinkSync(absoluteOldPath);
             console.log(`[Resume Clean Up] Successfully unlinked previous resume file: ${absoluteOldPath}`);
           }
@@ -920,20 +985,36 @@ const uploadStudentResume = async (req, res, next) => {
     await withTransaction(async (txQuery) => {
       await txQuery('DELETE FROM resumes WHERE student_id = ?', [studentId]);
       await txQuery(
-        'INSERT INTO resumes (id, student_id, file_name, file_path, file_size, mime_type) VALUES (?, ?, ?, ?, ?, ?)',
-        [resumeId, studentId, req.file.originalname, filePath, req.file.size, req.file.mimetype]
+        'INSERT INTO resumes (id, student_id, file_name, file_path, file_size, mime_type, parsed_content) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [resumeId, studentId, req.file.originalname, filePath, req.file.size, req.file.mimetype, normalizedText]
       );
     });
 
+    // Also persist extracted resume skills into student's skills table so manual skill list gets enriched
+    for (const skillName of extractedSkills) {
+      try {
+        const existingSkill = await query('SELECT id FROM skills WHERE student_id = ? AND LOWER(name) = ?', [studentId, skillName.toLowerCase()]);
+        if (existingSkill.length === 0) {
+          const skillId = 'sk-' + crypto.randomUUID();
+          await query('INSERT INTO skills (id, student_id, name, level) VALUES (?, ?, ?, ?)', [skillId, studentId, skillName, 'Intermediate']);
+        }
+      } catch (skErr) {
+        // Continue
+      }
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Resume uploaded successfully.',
+      message: 'Resume uploaded and parsed successfully.',
       resume: {
         id: resumeId,
         fileName: req.file.originalname,
         filePath,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
+        parsedTextLength: normalizedText.length,
+        extractedSkillsCount: extractedSkills.length,
+        extractedSkills,
       },
     });
   } catch (error) {
