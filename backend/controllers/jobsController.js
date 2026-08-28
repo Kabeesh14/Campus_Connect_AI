@@ -85,20 +85,13 @@ const getJobs = async (req, res, next) => {
     const studentProfile = await getStudentProfileForMatch(req.user?.id);
 
     let filtered = rawJobs.map((j) => {
-      if (studentProfile) {
-        const aiResult = calculateAiJobMatch(studentProfile, j);
-        return {
-          ...j,
-          match: aiResult.matchScore,
-          matchReasons: aiResult.matchReasons,
-          matchedSkills: aiResult.matchedSkills,
-          missingSkills: aiResult.missingSkills,
-        };
-      }
+      const aiResult = calculateAiJobMatch(studentProfile || {}, j);
       return {
         ...j,
-        match: null,
-        matchReasons: ['Not enough profile data to compute AI match score'],
+        match: typeof aiResult.matchScore === 'number' ? aiResult.matchScore : 0,
+        matchReasons: aiResult.matchReasons,
+        matchedSkills: aiResult.matchedSkills,
+        missingSkills: aiResult.missingSkills,
       };
     }).filter((j) => {
       let matchesSearch = true;
@@ -189,16 +182,14 @@ const getJobById = async (req, res, next) => {
     }
 
     const studentProfile = await getStudentProfileForMatch(req.user?.id);
-    if (studentProfile) {
-      const aiResult = calculateAiJobMatch(studentProfile, job);
-      job = {
-        ...job,
-        match: aiResult.matchScore,
-        matchReasons: aiResult.matchReasons,
-        matchedSkills: aiResult.matchedSkills,
-        missingSkills: aiResult.missingSkills,
-      };
-    }
+    const aiResult = calculateAiJobMatch(studentProfile || {}, job);
+    job = {
+      ...job,
+      match: typeof aiResult.matchScore === 'number' ? aiResult.matchScore : 0,
+      matchReasons: aiResult.matchReasons,
+      matchedSkills: aiResult.matchedSkills,
+      missingSkills: aiResult.missingSkills,
+    };
 
     return res.status(200).json({
       success: true,

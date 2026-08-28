@@ -219,13 +219,9 @@ export function JobsPage() {
                       </button>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      {j.match != null ? (
-                        <Badge variant={j.match >= 80 ? 'success' : j.match >= 60 ? 'primary' : 'warning'}>
-                          <Brain size={12} /> {j.match}% match
-                        </Badge>
-                      ) : (
-                        <Badge variant="neutral"><Brain size={12} /> Not evaluated</Badge>
-                      )}
+                      <Badge variant={(j.match ?? 0) >= 80 ? 'success' : (j.match ?? 0) >= 50 ? 'primary' : 'warning'}>
+                        <Brain size={12} /> {j.match ?? 0}% match
+                      </Badge>
                       <Badge variant="primary">{j.type || 'Full Time'}</Badge>
                       {j.remote && <Badge variant="accent">Remote</Badge>}
                       {j.category && <Badge variant="neutral">{j.category}</Badge>}
@@ -610,16 +606,16 @@ export function JobDetailPage() {
                 <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Brain size={18} /> AI Match Analysis</div>
                 <div className="mt-4 flex items-center gap-4">
                   <div className="font-display text-4xl font-bold gradient-text">
-                    {job.match != null ? `${job.match}%` : 'N/A'}
+                    {job.match ?? 0}%
                   </div>
                   <div className="flex-1">
                     <ProgressBar value={job.match || 0} color={(job.match || 0) >= 80 ? 'success' : 'primary'} />
                     <p className="mt-2 text-xs text-soft">
-                      {job.match != null
-                        ? job.match >= 80
-                          ? 'Excellent match — high success probability'
-                          : 'Moderate match — review role details'
-                        : 'Complete your student profile to view AI match score'}
+                      {(job.match || 0) >= 80
+                        ? 'Excellent match — high success probability'
+                        : (job.match || 0) >= 40
+                        ? 'Moderate match — review role details'
+                        : 'Low skill overlap — consider building relevant projects'}
                     </p>
                   </div>
                 </div>

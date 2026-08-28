@@ -26,107 +26,163 @@ function normalizeSkillName(rawSkill = '') {
 }
 
 /**
- * Dynamic AI Match Engine for Student Profile vs Job Posting
- * Strictly calculates score based on intersection of student skills vs job skills
+ * Authoritative AI Match Engine for Student Profile / Resume vs Adzuna Job
+ * ALWAYS returns a numeric matchScore between 0 and 100 (NEVER NULL)
  */
-function calculateAiJobMatch(student, job) {
-  if (!job || !student) {
+function calculateAiJobMatch(student = {}, job = {}) {
+  if (!job || typeof job !== 'object') {
     return {
-      matchScore: null,
-      matchReasons: ['Insufficient profile or job data for match calculation'],
+      matchScore: 0,
+      matchReasons: ['Job listing details unavailable'],
       matchedSkills: [],
       missingSkills: [],
+      fallbackUsed: false,
     };
   }
 
-  const jobSkills = Array.isArray(job.skills) ? job.skills.map((s) => String(s).trim()) : [];
-
-  if (jobSkills.length === 0) {
-    return {
-      matchScore: null,
-      matchReasons: ['Skills not specified in the job listing'],
-      matchedSkills: [],
-      missingSkills: [],
-    };
-  }
-
-  // 1. Resume Extracted Skills
+  // 1. Collect all student skills from: Resume, Manual Skills, Projects, Certifications
   const studentResumeSkills = Array.isArray(student.resumeSkills) ? student.resumeSkills : [];
+  const studentSkillsRaw = Array.isArray(student.skills) ? student.skills.map((s) => (typeof s === 'string' ? s : s.name || '')) : [];
+  const studentProjectSkills = Array.isArray(student.projects)
+    ? student.projects.flatMap((p) => {
+        if (Array.isArray(p.stack)) return p.stack;
+        if (typeof p.stack === 'string') {
+          try {
+            const parsed = JSON.parse(p.stack);
+            return Array.isArray(parsed) ? parsed : p.stack.split(',');
+          } catch {
+            return p.stack.split(',');
+          }
+        }
+        return [];
+      })
+    : [];
+  const studentCertSkills = Array.isArray(student.certifications) ? student.certifications.map((c) => c.name || c.certificationName || '') : [];
 
-  // 2. Profile Manual Skills
-  const studentSkillsRaw = (student.skills || []).map((s) => (typeof s === 'string' ? s : s.name || ''));
-
-  // 3. Project Stack Skills
-  const studentProjectSkills = (student.projects || []).flatMap((p) => {
-    if (Array.isArray(p.stack)) return p.stack;
-    if (typeof p.stack === 'string') {
-      try {
-        const parsed = JSON.parse(p.stack);
-        return Array.isArray(parsed) ? parsed : p.stack.split(',');
-      } catch {
-        return p.stack.split(',');
-      }
-    }
-    return [];
-  });
-
-  // 4. Certification Skills
-  const studentCertSkills = (student.certifications || []).map((c) => c.name || c.certificationName || '');
-
-  // Combine and normalize all student skills into a deduplicated Set
+  // Deduplicate and normalize all student skills
   const allStudentSkillsSet = new Set(
     [...studentResumeSkills, ...studentSkillsRaw, ...studentProjectSkills, ...studentCertSkills]
       .map((s) => normalizeSkillName(s))
       .filter(Boolean)
   );
 
+  const jobSkills = Array.isArray(job.skills) ? job.skills.map((s) => String(s).trim()) : [];
+  const jobId = job.id || job.adzunaJobId || 'adzuna-job';
+  const jobTitle = job.title || 'Job Position';
+
+  let finalMatchScore = 0;
+  let fallbackUsed = false;
   const matchedSkillNames = [];
   const missingSkillNames = [];
+  const matchReasons = [];
 
-  jobSkills.forEach((js) => {
-    const jsNormalized = normalizeSkillName(js);
-    let isMatched = false;
+  if (jobSkills.length > 0) {
+    // ----------------------------------------------------
+    // CASE A: Explicit Job Skills Available
+    // ----------------------------------------------------
+    jobSkills.forEach((js) => {
+      const jsNormalized = normalizeSkillName(js);
+      let isMatched = false;
 
-    allStudentSkillsSet.forEach((st) => {
-      if (st && (st === jsNormalized || st.includes(jsNormalized) || jsNormalized.includes(st))) {
-        isMatched = true;
+      allStudentSkillsSet.forEach((st) => {
+        if (st && (st === jsNormalized || st.includes(jsNormalized) || jsNormalized.includes(st))) {
+          isMatched = true;
+        }
+      });
+
+      if (isMatched) {
+        matchedSkillNames.push(js);
+      } else {
+        missingSkillNames.push(js);
       }
     });
 
-    if (isMatched) {
-      matchedSkillNames.push(js);
-    } else {
-      missingSkillNames.push(js);
+    finalMatchScore = Math.min(100, Math.max(0, Math.round((matchedSkillNames.length / jobSkills.length) * 100)));
+
+    if (matchedSkillNames.length > 0) {
+      matchReasons.push(`Matches your ${matchedSkillNames.slice(0, 3).join(', ')} skills`);
     }
-  });
+    if (missingSkillNames.length > 0) {
+      matchReasons.push(`Missing experience in ${missingSkillNames.slice(0, 2).join(', ')}`);
+    }
+  } else {
+    // ----------------------------------------------------
+    // CASE B: Fallback Relevance Scoring (No explicit skill tags)
+    // ----------------------------------------------------
+    fallbackUsed = true;
+    const titleLower = (job.title || '').toLowerCase();
+    const descLower = (job.description || '').toLowerCase();
+    const categoryLower = (job.category || '').toLowerCase();
+    const resumeTextLower = (student.resumeText || '').toLowerCase();
 
-  const matchScore = Math.round((matchedSkillNames.length / jobSkills.length) * 100);
-  const matchReasons = [];
+    if (allStudentSkillsSet.size === 0 && !resumeTextLower) {
+      finalMatchScore = 0;
+      matchReasons.push('Upload a resume or add skills to view personalized match score');
+    } else {
+      let titleOverlapCount = 0;
+      let descOverlapCount = 0;
 
-  if (matchedSkillNames.length > 0) {
-    matchReasons.push(`Matches your ${matchedSkillNames.slice(0, 3).join(', ')} skills`);
+      // Check overlap between student skills and job title/description/category
+      allStudentSkillsSet.forEach((stSkill) => {
+        if (!stSkill || stSkill.length < 2) return;
+        if (titleLower.includes(stSkill)) titleOverlapCount++;
+        if (descLower.includes(stSkill) || categoryLower.includes(stSkill)) descOverlapCount++;
+      });
+
+      // Check direct keyword overlap between parsed resume text and job description
+      let resumeTextOverlap = 0;
+      if (resumeTextLower && descLower) {
+        const descWords = descLower.split(/[^a-z0-9+#.]+/).filter((w) => w.length > 3);
+        const uniqueDescWords = new Set(descWords);
+        uniqueDescWords.forEach((word) => {
+          if (resumeTextLower.includes(word)) {
+            resumeTextOverlap++;
+          }
+        });
+      }
+
+      // Calculate deterministic score components
+      const titleWeight = titleOverlapCount * 30;
+      const descWeight = descOverlapCount * 15;
+      const resumeWeight = Math.min(30, Math.round(resumeTextOverlap * 2));
+
+      let computedScore = titleWeight + descWeight + resumeWeight;
+
+      if (computedScore === 0 && (allStudentSkillsSet.size > 0 || resumeTextLower.length > 50)) {
+        computedScore = 0;
+      }
+
+      finalMatchScore = Math.min(100, Math.max(0, Math.round(computedScore)));
+
+      if (titleOverlapCount > 0) {
+        matchReasons.push('Your background aligns with the job title requirements');
+      } else if (descOverlapCount > 0) {
+        matchReasons.push('Your skills match key responsibilities in the job description');
+      } else if (finalMatchScore > 0) {
+        matchReasons.push('General alignment with your uploaded resume profile');
+      } else {
+        matchReasons.push('Low alignment with your current profile skills');
+      }
+    }
   }
 
-  if (missingSkillNames.length > 0) {
-    matchReasons.push(`Missing experience in ${missingSkillNames.slice(0, 2).join(', ')}`);
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[MATCH CALCULATION]', {
-      jobId: job.id || job.adzunaJobId,
-      jobTitle: job.title,
-      studentSkillsCount: allStudentSkillsSet.size,
-      jobSkillsCount: jobSkills.length,
-      matchedSkillsCount: matchedSkillNames.length,
-      matchScore,
-    });
-  }
+  // Debug Logging per Requirement 9
+  console.log('[JOB MATCH DEBUG]');
+  console.log(`Job ID: ${jobId}`);
+  console.log(`Job Title: ${jobTitle}`);
+  console.log(`Extracted Job Skills: ${JSON.stringify(jobSkills)}`);
+  console.log(`Student Skills: ${JSON.stringify(Array.from(allStudentSkillsSet))}`);
+  console.log(`Matched Skills: ${JSON.stringify(matchedSkillNames)}`);
+  console.log(`Skill Score: ${jobSkills.length > 0 ? Math.round((matchedSkillNames.length / jobSkills.length) * 100) + '%' : 'N/A'}`);
+  console.log(`Fallback Used: ${fallbackUsed}`);
+  console.log(`Final Match Score: ${finalMatchScore}%`);
 
   return {
-    matchScore,
+    matchScore: finalMatchScore,
     matchReasons,
     matchedSkills: matchedSkillNames,
     missingSkills: missingSkillNames,
+    fallbackUsed,
   };
 }
 
